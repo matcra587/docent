@@ -1,0 +1,1 @@
+docent: stray.md: invalid frontmatter YAML: yaml: line 4: could not find expected ':'

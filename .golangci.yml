@@ -1,0 +1,131 @@
+version: "2"
+
+run:
+  timeout: 5m
+  relative-path-mode: cfg
+  tests: true
+
+# Greenfield library: strict from day one, but curated — every enable either
+# catches a bug class or enforces a published-module contract. Micro-style
+# and micro-perf linters stay off; gofumpt, gocritic, and review own style.
+linters:
+  default: standard
+
+  enable:
+    # correctness
+    - errorlint
+    - nilerr
+    - nilnesserr
+    - errchkjson
+    - forcetypeassert
+    - reassign
+    - gocheckcompilerdirectives # malformed //go: directives — docent lives on go:embed
+    # style with public-API teeth (godocs and error names ARE the API)
+    - gocritic
+    - revive
+    - godot
+    - misspell
+    - predeclared
+    - errname
+    - asciicheck
+    # complexity
+    - gocyclo
+    - nestif
+    # code quality
+    - unconvert
+    - goconst
+    # security
+    - gosec
+    - bidichk
+    # architecture — enforces core purity
+    - depguard
+    # library hygiene — docent is a published module with a public API
+    - gomoddirectives # a committed `replace` breaks every consumer
+    - gochecknoinits  # libraries must not do work behind the importer's back
+    - forbidigo       # docent never writes to stdout
+    # testing
+    - testifylint
+    - thelper
+    - usetesting
+    - tparallel
+    - testableexamples # Example funcs must have Output: or they rot on pkg.go.dev
+    # modernization & meta
+    - modernize # also covers intrange/copyloopvar-style rewrites
+    - exhaustive
+    - nolintlint
+
+  settings:
+    depguard:
+      rules:
+        # Core purity: framework knowledge lives solely in adapters. Only the
+        # cobra adapter package may import cobra; nothing imports kong
+        # until the kong adapter exists as its own package.
+        core-purity:
+          list-mode: strict
+          files:
+            - "$all"
+            - "!**/cobra/**"
+          allow:
+            - "$gostd"
+            - "gopkg.in/yaml.v3"
+            # Exact matches ($-suffixed): a bare prefix would also permit
+            # self-importing /cobra, silently reopening the framework
+            # boundary this rule exists to enforce. Only these four self-
+            # import paths are actually used outside cobra/**.
+            - "github.com/matcra587/docent$"
+            - "github.com/matcra587/docent/docenttest$"
+            - "github.com/matcra587/docent/export$"
+            - "github.com/matcra587/docent/harness$"
+          deny:
+            - pkg: "github.com/spf13/cobra"
+              desc: "cobra is adapter-only; core/export/docenttest must stay framework-free"
+            - pkg: "github.com/alecthomas/kong"
+              desc: "kong adapter is deferred beyond v0"
+        everywhere:
+          list-mode: lax
+          files:
+            - "$all"
+          deny:
+            - pkg: "io/ioutil"
+              desc: "deprecated since Go 1.16; use io and os packages"
+    forbidigo:
+      forbid:
+        - pattern: 'fmt\.Print(|f|ln)$'
+          msg: "docent never writes to stdout; return values, hosts own output"
+        - pattern: '^(print|println)$'
+          msg: "docent never writes to stdout; return values, hosts own output"
+    errcheck:
+      check-type-assertions: true
+    goconst:
+      min-len: 3
+      min-occurrences: 4
+    gocyclo:
+      min-complexity: 13
+    misspell:
+      locale: US
+    nolintlint:
+      require-explanation: true
+      require-specific: true
+
+  exclusions:
+    rules:
+      # Tests trade brevity for coverage: repeated literals are the point.
+      - path: '_test\.go$'
+        linters:
+          - goconst
+      # Golden/example fixture loading reads paths derived from test names.
+      - path: '_test\.go$'
+        linters:
+          - gosec
+        text: "G304"
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 50
+
+formatters:
+  enable:
+    - gofumpt
+  settings:
+    gofumpt:
+      extra-rules: true

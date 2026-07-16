@@ -1,0 +1,1 @@
+docent: few-sections.md: expected 6 sections (Decide, Run, Save, Preconditions, Recover, Next), got 3

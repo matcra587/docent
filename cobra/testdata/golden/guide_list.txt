@@ -1,0 +1,15 @@
+# Agent Guide Index (2 guides)
+
+slug: bravo
+title: Bravo Guide
+description: The bravo runbook.
+when_to_use: When you need bravo.
+commands: bravo run, bravo list
+aliases: bravo_guide
+order: 1
+
+slug: alpha
+title: Alpha Guide
+description: The alpha runbook.
+when_to_use: When you need alpha.
+commands: alpha run

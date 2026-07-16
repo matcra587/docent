@@ -1,0 +1,45 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/rvben/rumdl/main/rumdl.schema.json
+[global]
+flavor = "gfm"
+respect_gitignore = true
+
+exclude = [
+    ".claude/rules/**.md",
+    # changie-generated files use '-' list markers and long lines; the tooling
+    # owns their shape, so rumdl cannot enforce our prose style here.
+    ".changes/**.md",
+    "CHANGELOG.md",
+]
+
+disable = [
+    "MD025",  # Single top-level heading - frontmatter title + H1 is legitimate
+    "MD033",  # Inline HTML - GFM renders it (details/br/badges)
+    "MD034",  # Bare URLs - GFM auto-links them
+    "MD041",  # First line must be heading - breaks frontmatter files
+]
+
+# Line length applies to prose only; code fences and tables cannot wrap
+[MD013]
+line_length = 80
+code_blocks = false
+tables = false
+
+# Headings
+[MD003]
+style = "atx"
+
+# Lists
+[MD004]
+style = "asterisk"
+
+[MD007]
+indent = 4
+
+[MD029]
+style = "one_or_ordered"
+
+[MD030]
+ul_single = 3
+ul_multi = 3
+ol_single = 2
+ol_multi = 2

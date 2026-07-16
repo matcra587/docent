@@ -1,0 +1,26 @@
+#:schema https://mise.en.dev/schema/mise.json
+min_version = "2026.5.0"
+
+[settings]
+lockfile = true
+
+[tools]
+# clover: provider=auto constraint=minor tags=go
+go = "1.26.5"
+golangci-lint = "latest"
+"go:golang.org/x/vuln/cmd/govulncheck" = "latest"
+actionlint = "latest"
+betterleaks = "latest"
+goreleaser = "latest"
+changie = "latest"
+cosign = "latest"
+zizmor = "latest"
+rumdl = "latest"
+hk = "latest"
+pkl = "latest"
+
+[env]
+HK_MISE = 1
+
+[task_config]
+includes = ["tasks.toml"]

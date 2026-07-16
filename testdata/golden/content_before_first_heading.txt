@@ -1,0 +1,1 @@
+docent: leaky.md: content before first section heading: "Stray paragraph before any heading."

@@ -1,0 +1,64 @@
+# Dependabot configuration
+#
+# Grouping behaviour:
+#   - Minor + patch updates: grouped into a single PR per ecosystem
+#   - Major version bumps: individual PR per dependency
+#   - Security updates: individual PR per dependency
+#
+# Note: "patch" refers to semver version bumps (1.2.3 -> 1.2.4), not
+# security fixes. Security updates come from GitHub's Advisory Database
+# and can be any version bump that fixes a known CVE.
+
+version: 2
+
+updates:
+  - package-ecosystem: gomod
+    directory: "/"
+    schedule:
+      # Biweekly-ish: cron has no "every other week", so 1st + 15th.
+      interval: cron
+      cronjob: "0 8 1,15 * *"
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 10
+    commit-message:
+      # Yields `chore(deps): …`, matching the manual dependency-bump
+      # convention. `chore` needs no changelog fragment; a security bump
+      # still gets a `security` fragment by hand.
+      prefix: "chore"
+      include: "scope"
+    labels:
+      - dependencies
+    groups:
+      go-minor-patch:
+        applies-to: version-updates
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      # Biweekly-ish: cron has no "every other week", so 1st + 15th.
+      interval: cron
+      cronjob: "0 8 1,15 * *"
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 10
+    commit-message:
+      # Yields `ci(deps): …` for workflow action bumps; `ci` is exempt from
+      # changelog fragments.
+      prefix: "ci"
+      include: "scope"
+    labels:
+      - dependencies
+    groups:
+      actions-minor-patch:
+        applies-to: version-updates
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch

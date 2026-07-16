@@ -1,0 +1,20 @@
+# yaml-language-server: $schema=https://goreleaser.com/static/schema.json
+version: 2
+
+project_name: docent
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - skip: true
+
+# The release body is composed by the release:body task and passed in via
+# --release-notes. The changelog step must stay enabled: disable: true makes
+# GoReleaser silently ignore --release-notes and publish an empty body.
+changelog:
+  use: git
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"

@@ -1,0 +1,6 @@
+# Force LF at checkout on every platform. The golden tests compare emitted
+# artifacts byte-for-byte against files under testdata/, so a CRLF checkout
+# (Windows runners default to core.autocrlf=true) breaks every golden
+# comparison. Guide parsing normalizes CRLF input by design, but goldens are
+# exact bytes.
+* text=auto eol=lf

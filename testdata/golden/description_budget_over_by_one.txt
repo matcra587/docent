@@ -1,0 +1,1 @@
+docent: overone.md: description and when_to_use compose to 1025 characters; exported skill descriptions cap at 1024

@@ -1,0 +1,57 @@
+---
+slug: bravo
+title: Bravo Guide
+description: The bravo runbook.
+when_to_use: When you need bravo.
+commands: [bravo run, bravo list]
+aliases: [bravo_guide]
+order: 1
+---
+
+## Decide
+Which bravo variant to use.
+
+## Run
+```sh
+bravo run
+```
+
+## Save
+Capture the run ID.
+
+## Preconditions
+Auth must be valid.
+
+## Recover
+Re-authenticate on 401.
+
+## Next
+See alpha.
+
+---
+slug: alpha
+title: Alpha Guide
+description: The alpha runbook.
+when_to_use: When you need alpha.
+commands: [alpha run]
+---
+
+## Decide
+Which alpha form.
+
+## Run
+```sh
+alpha run
+```
+
+## Save
+Note the result.
+
+## Preconditions
+Token required.
+
+## Recover
+Retry on timeout.
+
+## Next
+See bravo.

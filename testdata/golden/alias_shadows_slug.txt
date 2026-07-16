@@ -1,0 +1,1 @@
+docent: first.md: alias "second" shadows a guide slug

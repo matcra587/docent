@@ -1,0 +1,2 @@
+n=1
+[0] slug=contract title="Contract Guide" order=- sections=[Decide, Run, Save, Preconditions, Recover, Next]

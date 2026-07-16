@@ -1,0 +1,17 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/gechr/clover/main/internal/config/schema.json
+required-version: ">=0.2.5"
+
+paths:
+  exclude:
+    # Golden fixtures pin bytes deliberately; a rewrite is a spec change.
+    - "**/testdata/**"
+    # Locally built test binaries (WDAC workaround), never committed pins.
+    - "bin/**"
+
+global:
+  output: wide
+
+run:
+  # Deep-check every secure pin against upstream: the SHA must actually be
+  # the commit its version comment claims. Implies --deep.
+  verify: true

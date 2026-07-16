@@ -1,0 +1,76 @@
+#:schema https://mise.en.dev/schema/mise-task.json
+
+[default]
+description = "List available tasks"
+quiet = true
+run = "mise tasks"
+
+[check]
+description = "Run local verification checks"
+depends = ["fmt:check", "lint", "rumdl", "test"]
+
+[ci]
+description = "Run CI-equivalent checks"
+depends = ["check", "tidy", "security"]
+
+[fix]
+description = "Apply automatic formatting and lint fixes"
+depends = ["fmt", "lint:fix", "rumdl:fix"]
+
+[fmt]
+description = "Format Go code (gofumpt via golangci-lint)"
+run = "golangci-lint fmt ./..."
+
+["fmt:check"]
+description = "Check Go formatting"
+run = "golangci-lint fmt --diff ./..."
+
+[lint]
+description = "Run golangci-lint"
+run = "golangci-lint run ./..."
+
+["lint:fix"]
+description = "Run golangci-lint with auto-fix"
+run = "golangci-lint run --fix ./..."
+
+[rumdl]
+description = "Lint markdown files with rumdl"
+run = "rumdl check ."
+
+["rumdl:fix"]
+description = "Fix markdown files with rumdl"
+run = "rumdl fmt ."
+
+[test]
+description = "Run tests with coverage"
+alias = "t"
+run = "go test -v -cover ./..."
+
+["test:race"]
+description = "Run tests with race detection"
+env = { CGO_ENABLED = "1" }
+run = "go test -v -race -cover ./..."
+
+[tidy]
+description = "Tidy Go modules and verify no drift"
+run = ["go mod tidy", "git diff --exit-code -- go.mod go.sum"]
+
+[security]
+description = "Run govulncheck"
+run = "govulncheck ./..."
+
+["skills:conformance"]
+description = "Validate every exported skill format against its authority (skills-ref / Claude Code field set)"
+run = "bash tools/skills-conformance.sh"
+
+["release:check"]
+description = "Run GoReleaser config and environment checks"
+run = ["goreleaser check", "goreleaser healthcheck"]
+
+["release-notes"]
+description = "Batch unreleased fragments into a version and regenerate the changelog"
+usage = 'arg "<version>" help="Release version, e.g. v0.1.0"'
+run = [
+    "changie batch {{usage.version}}",
+    "changie merge",
+]

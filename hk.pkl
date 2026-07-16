@@ -1,0 +1,77 @@
+amends "package://github.com/jdx/hk/releases/download/v1.50.0/hk@1.50.0#/Config.pkl"
+import "package://github.com/jdx/hk/releases/download/v1.50.0/hk@1.50.0#/Builtins.pkl"
+
+min_hk_version = "1.44.0"
+
+// Builtins as-is wherever possible. golangci-lint owns Go entirely: govet is
+// in its standard set and gofumpt runs via its formatters section, so there
+// are no separate go-vet/gofumpt steps.
+local linters = new Mapping<String, Step> {
+    // hygiene (hk util based — no external binaries)
+    ["merge-conflict"] = Builtins.check_merge_conflict
+    ["case-conflict"] = Builtins.check_case_conflict
+    ["large-files"] = Builtins.check_added_large_files
+    // Line-ending/EOF fixers exclude testdata: golden fixtures are byte-exact
+    // and must never be auto-rewritten.
+    ["mixed-line-ending"] = (Builtins.mixed_line_ending) {
+        exclude = "**/testdata/**"
+    }
+    ["newlines"] = (Builtins.newlines) {
+        exclude = "**/testdata/**"
+    }
+    // language + config
+    // _examples holds standalone HOST modules: hosts import cobra, print to
+    // stdout, and carry a local replace — everything the library linters
+    // exist to forbid in docent itself. `go build ./...` already ignores
+    // underscore directories; the staged-file path hk hands golangci-lint
+    // does not, so the exclusion is explicit here.
+    ["golangci-lint"] = (Builtins.golangci_lint) {
+        exclude = "_examples/**"
+    }
+    ["gomod-tidy"] = (Builtins.gomod_tidy) {
+        exclude = "_examples/**"
+    }
+    // Builtin's check ends in `>/dev/null`, which breaks on Windows; hk
+    // captures step output anyway, so just drop the redirect.
+    ["pkl"] = (Builtins.pkl) {
+        check = "pkl eval {{files}}"
+    }
+    ["rumdl"] = Builtins.rumdl
+    ["actionlint"] = Builtins.actionlint
+    ["zizmor"] = Builtins.zizmor
+    // Honors BETTERLEAKS_CONFIG, so user-level rule extensions apply on top
+    // of the default secret rules without living in the repo.
+    ["betterleaks"] = Builtins.betterleaks
+}
+
+local linters_with_security = (linters) {
+    ["govulncheck"] = (Builtins.go_vuln_check) { exclusive = true }
+}
+
+hooks {
+    ["pre-commit"] {
+        fix = true
+        stash = "git"
+        steps = linters
+    }
+    ["pre-push"] {
+        steps = linters_with_security
+    }
+    ["check"] {
+        steps = linters_with_security
+    }
+    ["fix"] {
+        fix = true
+        steps = linters
+    }
+    ["commit-msg"] {
+        steps {
+            ["conventional"] = Builtins.check_conventional_commit
+            // No builtin scans commit messages for secrets; this is the one
+            // deliberate hand-rolled step.
+            ["betterleaks"] = new Step {
+                check = "betterleaks stdin --no-banner < {{commit_msg_file}}"
+            }
+        }
+    }
+}

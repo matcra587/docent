@@ -1,0 +1,8 @@
+{
+  "name": "docent",
+  "description": "Skills for wiring the docent agent-knowledge library into Go CLIs: fresh onboarding and hand-rolled-surface migration.",
+  "version": "0.1.0",
+  "author": {
+    "name": "matcra587"
+  }
+}

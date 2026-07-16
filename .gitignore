@@ -1,0 +1,52 @@
+# OS and editors
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Go
+vendor/
+
+# Release-tooling scratch output
+dist-out/
+*.policy.yaml
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+coverage.out
+
+# Go workspace files: cross-repo dev wiring is per-machine, never committed
+go.work
+go.work.sum
+
+# Builds and releases
+bin/
+dist/
+build/
+out/
+
+# Local overrides
+*.local.*
+.task/
+
+# Example-host binaries (each _examples/<name>/ builds a binary of that name)
+_examples/glamour-host/glamour-host
+
+# Lint caches
+.rumdl_cache/

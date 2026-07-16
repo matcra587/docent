@@ -1,0 +1,1 @@
+docent: verbose.md: description and when_to_use compose to 1041 characters; exported skill descriptions cap at 1024

@@ -1,0 +1,27 @@
+# Bravo Guide
+
+## Decide
+
+Which bravo variant to use.
+
+## Run
+
+```sh
+bravo run
+```
+
+## Save
+
+Capture the run ID.
+
+## Preconditions
+
+Auth must be valid.
+
+## Recover
+
+Re-authenticate on 401.
+
+## Next
+
+See alpha.

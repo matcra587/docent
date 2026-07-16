@@ -1,0 +1,1 @@
+docent: bad_slug.md: slug "bad_slug" must be lowercase alphanumerics and hyphens with no leading, trailing, or consecutive hyphens

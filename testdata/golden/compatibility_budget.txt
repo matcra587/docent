@@ -1,0 +1,1 @@
+docent: needy.md: compatibility is 501 characters; exported skill compatibility caps at 500

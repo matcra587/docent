@@ -1,0 +1,3 @@
+n=2
+[0] slug=bravo title="Bravo Guide" order=1 sections=[Decide, Run, Save, Preconditions, Recover, Next]
+[1] slug=alpha title="Alpha Guide" order=- sections=[Decide, Run, Save, Preconditions, Recover, Next]

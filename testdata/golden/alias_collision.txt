@@ -1,0 +1,1 @@
+docent: second.md: alias "old-name" already declared by first.md

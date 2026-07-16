@@ -1,0 +1,24 @@
+---
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v[0-9]*.[0-9]*.[0-9]*'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions: {}
+
+jobs:
+  release:
+    name: Release
+    # clover: provider=github track=main repository=matcra587/github-actions tags=actions verify=true verify-branch=main
+    uses: matcra587/github-actions/.github/workflows/go-release.yml@2340f3f78bb0853dbef8f6d80b97dd632bb06a65 # main
+    permissions:
+      contents: write # Required to create GitHub releases.
+      actions: read # Required to read the gate runs for the tagged commit.
+    with:
+      gates: test.yml lint.yml security.yml

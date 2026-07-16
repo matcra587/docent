@@ -1,0 +1,96 @@
+---
+name: Test
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'push' && github.sha || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: test
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout repository
+        # clover: from=checkout tags=actions
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        # clover: from=setup-go tags=actions
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+
+      # -count=1 disables Go's test-result caching (build caching is
+      # unaffected): golden files live outside the source hash the test
+      # cache keys on, so a cached result could replay a stale pass.
+      - name: Run tests
+        env:
+          GOFLAGS: -count=1
+        run: go test -v ./...
+
+  race:
+    name: test (race)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        # clover: from=checkout tags=actions
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        # clover: from=setup-go tags=actions
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+
+      # The race detector links the TSan runtime, which needs cgo and a C
+      # toolchain — the run the WDAC-constrained Windows dev box cannot do.
+      - name: Run tests with race detection
+        env:
+          GOFLAGS: -count=1
+          CGO_ENABLED: "1"
+        run: go test -race ./...
+
+  skills-conformance:
+    name: skills conformance
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        # clover: from=checkout tags=actions
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        # clover: from=setup-go tags=actions
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+
+      # Every export format is exercised through the example host and
+      # validated against its own authority: agent-skill through the neutral
+      # spec's reference validator (skills-ref, via the runner's node/npx),
+      # claude-skill against Claude Code's documented field set. Formats are
+      # enumerated from the registry via completion, so a new format fails
+      # the gate until it is consciously mapped to an authority.
+      - name: Validate exported skill artifacts
+        run: bash tools/skills-conformance.sh
