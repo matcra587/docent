@@ -10,6 +10,7 @@
 //
 //		"github.com/matcra587/docent"
 //		docentcobra "github.com/matcra587/docent/cobra"
+//		"github.com/matcra587/docent/harness"
 //	)
 //
 // The two entry points are Tree, which walks a cobra.Command tree and
@@ -31,7 +32,7 @@
 // bytes, and only an interactive human terminal gets the styled form.
 //
 //	interactive := term.IsTerminal(int(os.Stdout.Fd())) // golang.org/x/term
-//	agentInvoked := os.Getenv("CLAUDECODE") != "" || os.Getenv("CODEX_THREAD_ID") != ""
+//	_, agentInvoked := harness.DetectAgent(os.LookupEnv) // docent/harness
 //
 //	var buf bytes.Buffer
 //	out := io.Writer(os.Stdout) // agents and pipes: raw Markdown
