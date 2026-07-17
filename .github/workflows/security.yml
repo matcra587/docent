@@ -5,6 +5,9 @@ on:
   pull_request:
   push:
     branches: [main]
+  schedule:
+    # Weekly advisory sweep — new CVEs land without commits.
+    - cron: "0 12 * * 1"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event_name == 'push' && github.sha || github.ref }}
@@ -14,67 +17,12 @@ permissions:
   contents: read
 
 jobs:
-  govulncheck:
-    name: govulncheck
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout repository
-        # clover: from=checkout tags=actions
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-        with:
-          persist-credentials: false
-
-      # The action handles its own Go setup; repo-checkout is off because
-      # the explicit checkout above already ran with hardened settings.
-      - name: Run govulncheck
-        # clover: provider=auto constraint=minor tags=actions
-        uses: golang/govulncheck-action@032d45514ae346b1db93c04b0c90b841c370344f # v1.1.0
-        with:
-          repo-checkout: false
-          go-version-file: go.mod
-          go-package: ./...
-
-  # PR-only: the action diffs the PR's dependency changes against the
-  # GitHub Advisory Database; there is no diff to review on a push. Gated to
-  # public visibility because the dependency-diff API needs GitHub Advanced
-  # Security on private repos — the job enables itself when the repo does.
-  dependency-review:
-    name: Dependency review
-    if: github.event_name == 'pull_request' && !github.event.repository.private
-    runs-on: ubuntu-latest
+  security:
+    name: Security
+    # clover: provider=auto constraint=minor tag-prefix=security/ tags=actions
+    uses: matcra587/github-actions/.github/workflows/security.yml@1f771927fa94bbb42fee46581c0cf6676080519e # security/v0.4.1
     permissions:
       contents: read
-    steps:
-      - name: Checkout
-        # clover: from=checkout tags=actions
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-        with:
-          fetch-depth: 1
-          persist-credentials: false
-
-      - name: Dependency review
-        # clover: provider=auto constraint=minor tags=actions
-        uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
-        with:
-          fail-on-severity: moderate
-
-  workflow-lint:
-    name: Workflow lint
-    # github-actions tags per component (workflow-lint/vX.Y.Z), so tag-prefix
-    # scopes selection to this workflow's releases.
-    # clover: provider=auto constraint=minor tag-prefix=workflow-lint/ tags=actions
-    uses: matcra587/github-actions/.github/workflows/workflow-lint.yml@67f0de0d0ceebe69895e868207c04e5c66b3bde8 # workflow-lint/v0.1.0
-    permissions:
-      contents: read
-      # security-events: write # Required for zizmor SARIF upload.
+      security-events: write # SARIF + CodeQL uploads to code scanning.
     with:
-      # calver: the major is the year, so minor would never cross it.
-      # clover: provider=github repository=jdx/mise constraint=major tags=actions
-      mise-version: "2026.7.7"
-      actionlint-args: |-
-        -color
-      zizmor-inputs: ./.github/
-      zizmor-persona: pedantic
-      zizmor-advanced-security: false
-      zizmor-annotations: true
+      sarif: true
