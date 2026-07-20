@@ -143,21 +143,27 @@ func walkChildren(cmd *gocobra.Command, parentPath string) []docent.Command {
 // repeat every ancestor's persistent flags on every node (on real hosts that
 // repetition dominated the schema's size).
 func extractFlags(cmd *gocobra.Command) []docent.Flag {
+	// Cobra rebuilds these flag sets on every accessor call (LocalFlags
+	// re-merges persistent flags each time); resolve each once for the walk.
+	local := cmd.LocalFlags()
+	persistent := cmd.PersistentFlags()
+
 	var flags []docent.Flag
-	cmd.LocalFlags().VisitAll(func(f *pflag.Flag) {
+
+	local.VisitAll(func(f *pflag.Flag) {
 		// Persistence is decided by pointer identity, not name: a command
 		// may define the same name both local and persistent (local wins
 		// for itself, persistent applies below), and a name match would
 		// mislabel the local variant and lose the persistent one entirely.
-		isPersistent := cmd.PersistentFlags().Lookup(f.Name) == f
+		isPersistent := persistent.Lookup(f.Name) == f
 		flags = append(flags, convertFlag(f, isPersistent))
 	})
 
 	// LocalFlags deduplicates by name with the local variant winning, so a
 	// persistent flag shadowed by a same-name local is absent from it; emit
 	// the persistent variant too — it is real surface for every descendant.
-	cmd.PersistentFlags().VisitAll(func(f *pflag.Flag) {
-		if cmd.LocalFlags().Lookup(f.Name) != f {
+	persistent.VisitAll(func(f *pflag.Flag) {
+		if local.Lookup(f.Name) != f {
 			flags = append(flags, convertFlag(f, true))
 		}
 	})
@@ -298,11 +304,26 @@ func clibEnumFrom(extras map[string]any) []string {
 // one-required groups from the cobra annotation system and returns them
 // sorted for determinism.
 func extractFlagGroups(cmd *gocobra.Command) []docent.FlagGroup {
+	// The three annotation kinds read identical flag-set views; build the
+	// name sets once — cobra re-merges the sets on every LocalFlags/Flags
+	// call — and pass them to each collection pass.
+	local := make(map[string]struct{})
+	cmd.LocalFlags().VisitAll(func(f *pflag.Flag) {
+		local[f.Name] = struct{}{}
+	})
+
+	merged := cmd.Flags()
+
+	visible := make(map[string]struct{})
+	merged.VisitAll(func(f *pflag.Flag) {
+		visible[f.Name] = struct{}{}
+	})
+
 	var groups []docent.FlagGroup
 
-	groups = append(groups, collectAnnotationGroups(cmd, annotationMutuallyExclusive, docent.FlagGroupMutuallyExclusive)...)
-	groups = append(groups, collectAnnotationGroups(cmd, annotationRequiredTogether, docent.FlagGroupRequiredTogether)...)
-	groups = append(groups, collectAnnotationGroups(cmd, annotationOneRequired, docent.FlagGroupOneRequired)...)
+	groups = append(groups, collectAnnotationGroups(merged, local, visible, annotationMutuallyExclusive, docent.FlagGroupMutuallyExclusive)...)
+	groups = append(groups, collectAnnotationGroups(merged, local, visible, annotationRequiredTogether, docent.FlagGroupRequiredTogether)...)
+	groups = append(groups, collectAnnotationGroups(merged, local, visible, annotationOneRequired, docent.FlagGroupOneRequired)...)
 
 	return groups
 }
@@ -310,7 +331,9 @@ func extractFlagGroups(cmd *gocobra.Command) []docent.FlagGroup {
 // collectAnnotationGroups reads flag groups from a specific pflag annotation
 // key. Each flag in a group carries the annotation value with the
 // space-separated names of all flags in the group; this function deduplicates
-// groups across flags so each unique group appears exactly once.
+// groups across flags so each unique group appears exactly once. merged is
+// the command's merged flag set, local and visible the name sets built from
+// its local and merged views.
 //
 // Cobra writes the annotation onto the shared flag objects, which every
 // command whose merged flag set contains the object can see — so a group
@@ -318,22 +341,12 @@ func extractFlagGroups(cmd *gocobra.Command) []docent.FlagGroup {
 // emitted only where every member is visible in the command's merged set and
 // at least one member is defined locally: the marking command qualifies,
 // unrelated commands that merely inherit a member do not.
-func collectAnnotationGroups(cmd *gocobra.Command, annotKey string, kind docent.FlagGroupKind) []docent.FlagGroup {
-	local := make(map[string]struct{})
-	cmd.LocalFlags().VisitAll(func(f *pflag.Flag) {
-		local[f.Name] = struct{}{}
-	})
-
-	visible := make(map[string]struct{})
-	cmd.Flags().VisitAll(func(f *pflag.Flag) {
-		visible[f.Name] = struct{}{}
-	})
-
+func collectAnnotationGroups(merged *pflag.FlagSet, local, visible map[string]struct{}, annotKey string, kind docent.FlagGroupKind) []docent.FlagGroup {
 	seen := make(map[string]struct{})
 
 	var groups []docent.FlagGroup
 
-	cmd.Flags().VisitAll(func(f *pflag.Flag) {
+	merged.VisitAll(func(f *pflag.Flag) {
 		for _, groupStr := range f.Annotations[annotKey] {
 			if _, ok := seen[groupStr]; ok {
 				continue

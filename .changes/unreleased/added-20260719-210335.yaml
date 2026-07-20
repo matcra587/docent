@@ -1,0 +1,3 @@
+kind: added
+body: Add `harness.EnvVars` listing every environment variable agent detection consults, so hosts and tests can scrub or pin the full detection surface
+time: 2026-07-19T21:03:35.872899359-04:00

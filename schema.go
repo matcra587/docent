@@ -65,6 +65,14 @@ type Command struct {
 	Children []Command `json:"children,omitempty"`
 }
 
+// Clone returns a deep copy of c sharing no slice or map storage with it,
+// recursing through Children. It is the boundary-copy primitive: lookups and
+// emission-time rewrites (masking volatile defaults, stamping a contract
+// version) clone first so the original tree is never mutated.
+func (c Command) Clone() Command {
+	return applyRegistry(nil, c)
+}
+
 // Flag is a framework-neutral flag definition. Default holds the value exactly
 // as the framework reports it (no type coercion). Enum is non-nil only when the
 // flag's value type exposes a finite set of allowed values.
@@ -152,7 +160,7 @@ type FlagGroup struct {
 // the tree that was searched.
 func FindByPath(cmd Command, path string) (Command, bool) {
 	if cmd.Path == path {
-		return deepCopyCommand(cmd), true
+		return cmd.Clone(), true
 	}
 
 	for _, child := range cmd.Children {
@@ -162,23 +170,6 @@ func FindByPath(cmd Command, path string) (Command, bool) {
 	}
 
 	return Command{}, false
-}
-
-// deepCopyCommand returns a Command sharing no slice or map storage with cmd,
-// recursing through Children. It exists so lookups honor the boundary-copy
-// contract: returned values must never alias the searched tree.
-func deepCopyCommand(cmd Command) Command {
-	out := copyCommandShallow(cmd)
-
-	if cmd.Children != nil {
-		out.Children = make([]Command, len(cmd.Children))
-
-		for i, child := range cmd.Children {
-			out.Children[i] = deepCopyCommand(child)
-		}
-	}
-
-	return out
 }
 
 // SchemaRegistry maps command paths to host-provided input and output JSON
@@ -211,7 +202,10 @@ func (r SchemaRegistry) Apply(cmd Command) Command {
 	return applyRegistry(r, cmd)
 }
 
-// applyRegistry is the recursive worker for SchemaRegistry.Apply.
+// applyRegistry is the recursive worker for SchemaRegistry.Apply and, with a
+// nil registry, the single deep-copy walker behind Command.Clone and
+// FindByPath — one implementation so lookup and registry application cannot
+// drift in copy semantics.
 func applyRegistry(r SchemaRegistry, cmd Command) Command {
 	out := copyCommandShallow(cmd)
 
@@ -225,7 +219,7 @@ func applyRegistry(r SchemaRegistry, cmd Command) Command {
 		}
 	}
 
-	if len(cmd.Children) > 0 {
+	if cmd.Children != nil {
 		out.Children = make([]Command, len(cmd.Children))
 
 		for i, child := range cmd.Children {

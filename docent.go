@@ -1,6 +1,7 @@
 package docent
 
 import (
+	"bytes"
 	"io"
 	"maps"
 	"slices"
@@ -35,6 +36,15 @@ var requiredSections = [...]string{
 	"Preconditions",
 	"Recover",
 	"Next",
+}
+
+// SectionHeadings returns the section headings StandardVersion requires, in
+// their required order. Surfaces that enumerate the section vocabulary —
+// shell completion, documentation, tooling — derive from this accessor so
+// they cannot drift from validation when the standard revises. The returned
+// slice is a copy; mutating it affects nothing.
+func SectionHeadings() []string {
+	return slices.Clone(requiredSections[:])
 }
 
 // Section is a single named heading and its prose body within a guide.
@@ -256,39 +266,16 @@ func normalizeGuideName(name string) string {
 }
 
 // copyGuide returns a deep copy of g so API boundaries never share backing
-// memory with the GuideSet's internal state.
+// memory with the GuideSet's internal state. The stdlib Clone helpers
+// preserve nil-for-nil, so absent optional fields stay absent.
 func copyGuide(g Guide) Guide {
 	out := g
-
-	if g.Commands != nil {
-		out.Commands = make([]string, len(g.Commands))
-		copy(out.Commands, g.Commands)
-	}
-
-	if g.Aliases != nil {
-		out.Aliases = make([]string, len(g.Aliases))
-		copy(out.Aliases, g.Aliases)
-	}
-
-	if g.Metadata != nil {
-		out.Metadata = make(map[string]string, len(g.Metadata))
-		maps.Copy(out.Metadata, g.Metadata)
-	}
-
-	if g.AllowedTools != nil {
-		out.AllowedTools = make([]string, len(g.AllowedTools))
-		copy(out.AllowedTools, g.AllowedTools)
-	}
-
-	if g.Sections != nil {
-		out.Sections = make([]Section, len(g.Sections))
-		copy(out.Sections, g.Sections)
-	}
-
-	if g.Raw != nil {
-		out.Raw = make([]byte, len(g.Raw))
-		copy(out.Raw, g.Raw)
-	}
+	out.Commands = slices.Clone(g.Commands)
+	out.Aliases = slices.Clone(g.Aliases)
+	out.Metadata = maps.Clone(g.Metadata)
+	out.AllowedTools = slices.Clone(g.AllowedTools)
+	out.Sections = slices.Clone(g.Sections)
+	out.Raw = bytes.Clone(g.Raw)
 
 	if g.Order != nil {
 		order := *g.Order

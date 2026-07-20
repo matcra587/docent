@@ -78,33 +78,37 @@ func Check(fsys fs.FS, root docent.Command) []error {
 func Validate(tb testing.TB, fsys fs.FS, root docent.Command) {
 	tb.Helper()
 
+	// One row per validation class, mirroring the sentinel list documented
+	// above; an unclassified error falls through to the generic label.
+	classes := []struct {
+		sentinel error
+		label    string
+	}{
+		{docent.ErrMissingFrontmatter, "missing frontmatter"},
+		{docent.ErrInvalidFrontmatter, "invalid frontmatter"},
+		{docent.ErrMissingField, "missing required field"},
+		{docent.ErrSlugMismatch, "slug mismatch"},
+		{docent.ErrInvalidSlug, "invalid slug"},
+		{docent.ErrDescriptionTooLong, "description budget"},
+		{docent.ErrCompatibilityTooLong, "compatibility budget"},
+		{docent.ErrInvalidSections, "invalid sections"},
+		{docent.ErrDuplicateOrder, "duplicate order"},
+		{docent.ErrAliasCollision, "alias collision"},
+		{docent.ErrCommandNotFound, "unknown command reference"},
+	}
+
 	for _, err := range Check(fsys, root) {
-		switch {
-		case errors.Is(err, docent.ErrMissingFrontmatter):
-			tb.Errorf("missing frontmatter: %v", err)
-		case errors.Is(err, docent.ErrInvalidFrontmatter):
-			tb.Errorf("invalid frontmatter: %v", err)
-		case errors.Is(err, docent.ErrMissingField):
-			tb.Errorf("missing required field: %v", err)
-		case errors.Is(err, docent.ErrSlugMismatch):
-			tb.Errorf("slug mismatch: %v", err)
-		case errors.Is(err, docent.ErrInvalidSlug):
-			tb.Errorf("invalid slug: %v", err)
-		case errors.Is(err, docent.ErrDescriptionTooLong):
-			tb.Errorf("description budget: %v", err)
-		case errors.Is(err, docent.ErrCompatibilityTooLong):
-			tb.Errorf("compatibility budget: %v", err)
-		case errors.Is(err, docent.ErrInvalidSections):
-			tb.Errorf("invalid sections: %v", err)
-		case errors.Is(err, docent.ErrDuplicateOrder):
-			tb.Errorf("duplicate order: %v", err)
-		case errors.Is(err, docent.ErrAliasCollision):
-			tb.Errorf("alias collision: %v", err)
-		case errors.Is(err, docent.ErrCommandNotFound):
-			tb.Errorf("unknown command reference: %v", err)
-		default:
-			tb.Errorf("guide validation: %v", err)
+		label := "guide validation"
+
+		for _, c := range classes {
+			if errors.Is(err, c.sentinel) {
+				label = c.label
+
+				break
+			}
 		}
+
+		tb.Errorf("%s: %v", label, err)
 	}
 }
 

@@ -37,3 +37,31 @@ func TestSupportedMarkersCorrelation(t *testing.T) {
 		}
 	}
 }
+
+// TestEnvVarsCoversAllMarkers pins EnvVars' completeness promise: it must
+// list the two override variables and every marker variable of every agent.
+// A marker added to agentMarkers but missing from EnvVars would let tests
+// that scrub the detection surface (e.g. the cobra export tests) go
+// green-by-skip in a clean environment while leaking in a real one.
+func TestEnvVarsCoversAllMarkers(t *testing.T) {
+	t.Parallel()
+
+	vars := make(map[string]bool)
+	for _, v := range EnvVars() {
+		vars[v] = true
+	}
+
+	for _, override := range []string{"AI_AGENT", "AGENT"} {
+		if !vars[override] {
+			t.Errorf("EnvVars() is missing override variable %q", override)
+		}
+	}
+
+	for _, m := range agentMarkers() {
+		for _, v := range m.envVars {
+			if !vars[v] {
+				t.Errorf("EnvVars() is missing %s marker %q", m.name, v)
+			}
+		}
+	}
+}

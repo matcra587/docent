@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"errors"
 	"flag"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -97,53 +96,12 @@ func mustLoadGuides(t *testing.T, fsys fstest.MapFS) *docent.GuideSet {
 	return gs
 }
 
-// executeAgentGuide mounts the agent command group on a fresh cobra host, sets
-// args, captures stdout, and executes. It returns the captured bytes and any error.
-// Errors and usage output are silenced so test output stays clean.
-func executeAgentGuide(cfg docent.Config, args ...string) ([]byte, error) {
-	var buf bytes.Buffer
-
-	hostRoot := &gocobra.Command{Use: "host", Short: "Test host."}
-	hostRoot.SilenceErrors = true
-	hostRoot.SilenceUsage = true
-	hostRoot.SetOut(&buf)
-
-	hostRoot.AddCommand(docentcobra.NewCommand(cfg))
-	hostRoot.SetArgs(args)
-
-	err := hostRoot.Execute()
-
-	return buf.Bytes(), err
-}
-
 // checkGuideGolden compares got against the golden file under
 // cobra/testdata/golden/<name>.txt. Run with -update-guide to regenerate.
 func checkGuideGolden(t *testing.T, name, got string) {
 	t.Helper()
 
-	goldenPath := filepath.Join("testdata", "golden", name+".txt")
-
-	if *updateGuide {
-		if err := os.MkdirAll(filepath.Dir(goldenPath), 0o700); err != nil {
-			t.Fatalf("mkdir %s: %v", filepath.Dir(goldenPath), err)
-		}
-
-		if err := os.WriteFile(goldenPath, []byte(got), 0o600); err != nil {
-			t.Fatalf("write golden %s: %v", goldenPath, err)
-		}
-
-		return
-	}
-
-	wantBytes, err := os.ReadFile(goldenPath)
-	if err != nil {
-		t.Fatalf("read golden %s: %v (run with -update-guide to generate)", goldenPath, err)
-	}
-
-	want := string(wantBytes)
-	if got != want {
-		t.Errorf("golden mismatch for %q:\n--- want\n%s\n+++ got\n%s", name, want, got)
-	}
+	checkGolden(t, filepath.Join("testdata", "golden", name+".txt"), got, *updateGuide, "update-guide")
 }
 
 // TestAgentGuide_list verifies that "agent guide" with no args emits a
@@ -154,7 +112,7 @@ func TestAgentGuide_list(t *testing.T) {
 	gs := mustLoadGuides(t, guideValidFS)
 	cfg := docent.Config{Guides: gs}
 
-	out, err := executeAgentGuide(cfg, "agent", "guide")
+	out, err := executeAgent(cfg, nil, "agent", "guide")
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
@@ -170,7 +128,7 @@ func TestAgentGuide_single(t *testing.T) {
 	gs := mustLoadGuides(t, guideValidFS)
 	cfg := docent.Config{Guides: gs}
 
-	out, err := executeAgentGuide(cfg, "agent", "guide", "bravo")
+	out, err := executeAgent(cfg, nil, "agent", "guide", "bravo")
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
@@ -186,7 +144,7 @@ func TestAgentGuide_section(t *testing.T) {
 	gs := mustLoadGuides(t, guideValidFS)
 	cfg := docent.Config{Guides: gs}
 
-	out, err := executeAgentGuide(cfg, "agent", "guide", "bravo", "--section", "Run")
+	out, err := executeAgent(cfg, nil, "agent", "guide", "bravo", "--section", "Run")
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
@@ -202,7 +160,7 @@ func TestAgentGuide_all(t *testing.T) {
 	gs := mustLoadGuides(t, guideValidFS)
 	cfg := docent.Config{Guides: gs}
 
-	out, err := executeAgentGuide(cfg, "agent", "guide", "--all")
+	out, err := executeAgent(cfg, nil, "agent", "guide", "--all")
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
@@ -219,12 +177,12 @@ func TestAgentGuide_aliasResolves(t *testing.T) {
 	gs := mustLoadGuides(t, guideValidFS)
 	cfg := docent.Config{Guides: gs}
 
-	canonical, err := executeAgentGuide(cfg, "agent", "guide", "bravo")
+	canonical, err := executeAgent(cfg, nil, "agent", "guide", "bravo")
 	if err != nil {
 		t.Fatalf("canonical lookup: %v", err)
 	}
 
-	viaAlias, err := executeAgentGuide(cfg, "agent", "guide", "bravo_guide")
+	viaAlias, err := executeAgent(cfg, nil, "agent", "guide", "bravo_guide")
 	if err != nil {
 		t.Fatalf("alias lookup: %v", err)
 	}
@@ -242,7 +200,7 @@ func TestAgentGuide_indexContractVersion(t *testing.T) {
 
 	gs := mustLoadGuides(t, guideValidFS)
 
-	out, err := executeAgentGuide(docent.Config{Guides: gs, ContractVersion: "2.1.0"}, "agent", "guide")
+	out, err := executeAgent(docent.Config{Guides: gs, ContractVersion: "2.1.0"}, nil, "agent", "guide")
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
@@ -252,7 +210,7 @@ func TestAgentGuide_indexContractVersion(t *testing.T) {
 		t.Errorf("index line 2 = %q, want %q", lines[1], "contract_version: 2.1.0")
 	}
 
-	bare, err := executeAgentGuide(docent.Config{Guides: gs}, "agent", "guide")
+	bare, err := executeAgent(docent.Config{Guides: gs}, nil, "agent", "guide")
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
@@ -272,13 +230,13 @@ func TestAgentGuide_nearMissResolves(t *testing.T) {
 	gs := mustLoadGuides(t, guideValidFS)
 	cfg := docent.Config{Guides: gs}
 
-	canonical, err := executeAgentGuide(cfg, "agent", "guide", "bravo")
+	canonical, err := executeAgent(cfg, nil, "agent", "guide", "bravo")
 	if err != nil {
 		t.Fatalf("canonical: %v", err)
 	}
 
 	for _, name := range []string{"BRAVO", "Bravo", "brav"} {
-		got, err := executeAgentGuide(cfg, "agent", "guide", name)
+		got, err := executeAgent(cfg, nil, "agent", "guide", name)
 		if err != nil {
 			t.Fatalf("near-miss %q: %v", name, err)
 		}
@@ -297,7 +255,7 @@ func TestAgentGuide_missingSlug(t *testing.T) {
 	gs := mustLoadGuides(t, guideValidFS)
 	cfg := docent.Config{Guides: gs}
 
-	_, err := executeAgentGuide(cfg, "agent", "guide", "no-such-guide")
+	_, err := executeAgent(cfg, nil, "agent", "guide", "no-such-guide")
 	if err == nil {
 		t.Fatal("Execute: expected error for unknown slug, got nil")
 	}
@@ -315,7 +273,7 @@ func TestAgentGuide_missingSection(t *testing.T) {
 	gs := mustLoadGuides(t, guideValidFS)
 	cfg := docent.Config{Guides: gs}
 
-	_, err := executeAgentGuide(cfg, "agent", "guide", "bravo", "--section", "NoSuchSection")
+	_, err := executeAgent(cfg, nil, "agent", "guide", "bravo", "--section", "NoSuchSection")
 	if err == nil {
 		t.Fatal("Execute: expected error for unknown section, got nil")
 	}
@@ -333,7 +291,7 @@ func TestAgentGuide_sectionWithoutSlug(t *testing.T) {
 	gs := mustLoadGuides(t, guideValidFS)
 	cfg := docent.Config{Guides: gs}
 
-	_, err := executeAgentGuide(cfg, "agent", "guide", "--section", "Run")
+	_, err := executeAgent(cfg, nil, "agent", "guide", "--section", "Run")
 	if err == nil {
 		t.Fatal("Execute: expected error for --section without a slug, got nil")
 	}
@@ -352,7 +310,7 @@ func TestAgentGuide_allWithSlug(t *testing.T) {
 	gs := mustLoadGuides(t, guideValidFS)
 	cfg := docent.Config{Guides: gs}
 
-	_, err := executeAgentGuide(cfg, "agent", "guide", "bravo", "--all")
+	_, err := executeAgent(cfg, nil, "agent", "guide", "bravo", "--all")
 	if err == nil {
 		t.Fatal("Execute: expected error for --all with a slug, got nil")
 	}
@@ -373,7 +331,7 @@ func TestAgentGuide_sectionAndAllMutuallyExclusive(t *testing.T) {
 	gs := mustLoadGuides(t, guideValidFS)
 	cfg := docent.Config{Guides: gs}
 
-	_, err := executeAgentGuide(cfg, "agent", "guide", "--section", "Run", "--all")
+	_, err := executeAgent(cfg, nil, "agent", "guide", "--section", "Run", "--all")
 	if err == nil {
 		t.Fatal("Execute: expected error for --section and --all together, got nil")
 	}
@@ -392,7 +350,7 @@ func TestAgentGuide_nilGuideSet(t *testing.T) {
 
 	cfg := docent.Config{} // Guides is nil
 
-	out, err := executeAgentGuide(cfg, "agent", "guide")
+	out, err := executeAgent(cfg, nil, "agent", "guide")
 	if err != nil {
 		t.Fatalf("Execute: unexpected error with nil GuideSet: %v", err)
 	}
@@ -502,12 +460,12 @@ func TestAgentGuide_listDeterminism(t *testing.T) {
 	gs := mustLoadGuides(t, guideValidFS)
 	cfg := docent.Config{Guides: gs}
 
-	first, err := executeAgentGuide(cfg, "agent", "guide")
+	first, err := executeAgent(cfg, nil, "agent", "guide")
 	if err != nil {
 		t.Fatalf("first Execute: %v", err)
 	}
 
-	second, err := executeAgentGuide(cfg, "agent", "guide")
+	second, err := executeAgent(cfg, nil, "agent", "guide")
 	if err != nil {
 		t.Fatalf("second Execute: %v", err)
 	}
@@ -525,12 +483,12 @@ func TestAgentGuide_allDeterminism(t *testing.T) {
 	gs := mustLoadGuides(t, guideValidFS)
 	cfg := docent.Config{Guides: gs}
 
-	first, err := executeAgentGuide(cfg, "agent", "guide", "--all")
+	first, err := executeAgent(cfg, nil, "agent", "guide", "--all")
 	if err != nil {
 		t.Fatalf("first Execute: %v", err)
 	}
 
-	second, err := executeAgentGuide(cfg, "agent", "guide", "--all")
+	second, err := executeAgent(cfg, nil, "agent", "guide", "--all")
 	if err != nil {
 		t.Fatalf("second Execute: %v", err)
 	}
@@ -548,7 +506,7 @@ func TestAgentGuide_listCanonicalOrder(t *testing.T) {
 	gs := mustLoadGuides(t, guideValidFS)
 	cfg := docent.Config{Guides: gs}
 
-	out, err := executeAgentGuide(cfg, "agent", "guide")
+	out, err := executeAgent(cfg, nil, "agent", "guide")
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
@@ -578,7 +536,7 @@ func TestAgentGuide_allCanonicalOrder(t *testing.T) {
 	gs := mustLoadGuides(t, guideValidFS)
 	cfg := docent.Config{Guides: gs}
 
-	out, err := executeAgentGuide(cfg, "agent", "guide", "--all")
+	out, err := executeAgent(cfg, nil, "agent", "guide", "--all")
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
 	}

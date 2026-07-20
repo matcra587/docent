@@ -60,7 +60,7 @@ func SchemaGolden(tb testing.TB, cmd docent.Command, goldenPath string, update b
 // (an ephemeral port, a home-directory path) and would flake the golden; the
 // masked copy shares no storage with cmd.
 func MaskFlagDefaults(cmd docent.Command, names ...string) docent.Command {
-	masked := docent.SchemaRegistry(nil).Apply(cmd)
+	masked := cmd.Clone()
 
 	volatile := make(map[string]struct{}, len(names))
 	for _, name := range names {

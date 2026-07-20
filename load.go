@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"maps"
 	"path"
 	"regexp"
 	"sort"
@@ -147,30 +146,24 @@ func parseGuide(stem string, raw []byte) (Guide, error) {
 		return Guide{}, err
 	}
 
-	// Copy slices so the returned Guide is independent of the raw bytes and
-	// the unmarshaled frontmatter.
-	cmds := make([]string, len(fm.Commands))
-	copy(cmds, fm.Commands)
-
-	var aliases []string
-	if len(fm.Aliases) > 0 {
-		aliases = make([]string, len(fm.Aliases))
-		copy(aliases, fm.Aliases)
+	// fm is function-local and freshly unmarshaled, so its fields alias
+	// nothing; only raw is caller-owned and must be detached. Optional lists
+	// normalize empty to nil so absent and explicitly-empty spell the same
+	// downstream (Commands stays as parsed: empty-but-present is meaningful
+	// there and validated above).
+	aliases := fm.Aliases
+	if len(aliases) == 0 {
+		aliases = nil
 	}
 
-	rawCopy := make([]byte, len(raw))
-	copy(rawCopy, raw)
-
-	var metadata map[string]string
-	if len(fm.Metadata) > 0 {
-		metadata = make(map[string]string, len(fm.Metadata))
-		maps.Copy(metadata, fm.Metadata)
+	metadata := fm.Metadata
+	if len(metadata) == 0 {
+		metadata = nil
 	}
 
-	var allowedTools []string
-	if len(fm.AllowedTools) > 0 {
-		allowedTools = make([]string, len(fm.AllowedTools))
-		copy(allowedTools, fm.AllowedTools)
+	allowedTools := fm.AllowedTools
+	if len(allowedTools) == 0 {
+		allowedTools = nil
 	}
 
 	return Guide{
@@ -178,11 +171,11 @@ func parseGuide(stem string, raw []byte) (Guide, error) {
 		Title:         fm.Title,
 		Description:   fm.Description,
 		WhenToUse:     fm.WhenToUse,
-		Commands:      cmds,
+		Commands:      fm.Commands,
 		Aliases:       aliases,
 		Order:         fm.Order,
 		Sections:      sections,
-		Raw:           rawCopy,
+		Raw:           bytes.Clone(raw),
 		License:       fm.License,
 		Compatibility: fm.Compatibility,
 		Metadata:      metadata,
@@ -194,8 +187,12 @@ func parseGuide(stem string, raw []byte) (Guide, error) {
 // Markdown body bytes. It normalizes CRLF to LF before splitting.
 // An error is returned if no valid frontmatter block is found.
 func splitFrontmatter(src []byte) (fm, body []byte, err error) {
-	src = bytes.ReplaceAll(src, []byte("\r\n"), []byte("\n"))
-	src = bytes.ReplaceAll(src, []byte("\r"), []byte("\n"))
+	// bytes.ReplaceAll copies the input even with zero matches; skip the
+	// normalization entirely for the common LF-only file.
+	if bytes.ContainsRune(src, '\r') {
+		src = bytes.ReplaceAll(src, []byte("\r\n"), []byte("\n"))
+		src = bytes.ReplaceAll(src, []byte("\r"), []byte("\n"))
+	}
 
 	// A valid guide starts exactly with "---\n".
 	if !bytes.HasPrefix(src, []byte("---\n")) {

@@ -14,6 +14,7 @@ import (
 	"github.com/matcra587/docent"
 	docentcobra "github.com/matcra587/docent/cobra"
 	"github.com/matcra587/docent/export"
+	"github.com/matcra587/docent/harness"
 )
 
 // updateExportGolden regenerates golden files when passed to "go test -update-export".
@@ -91,36 +92,6 @@ var exportFS = fstest.MapFS{
 	}, "\n"))},
 }
 
-// executeAgentExport mounts the agent command group on a test root, sets args,
-// captures stdout, and executes. It returns the captured bytes and any error.
-func executeAgentExport(cfg docent.Config, args ...string) ([]byte, error) {
-	var buf bytes.Buffer
-
-	hostRoot := &gocobra.Command{Use: "host", Short: "Test host."}
-	hostRoot.SilenceErrors = true
-	hostRoot.SilenceUsage = true
-	hostRoot.SetOut(&buf)
-
-	hostRoot.AddCommand(docentcobra.NewCommand(cfg))
-	hostRoot.SetArgs(args)
-
-	err := hostRoot.Execute()
-
-	return buf.Bytes(), err
-}
-
-// loadExportGuides is a helper that loads exportFS or fails the test.
-func loadExportGuides(t *testing.T) *docent.GuideSet {
-	t.Helper()
-
-	gs, err := docent.LoadGuides(exportFS)
-	if err != nil {
-		t.Fatalf("LoadGuides: %v", err)
-	}
-
-	return gs
-}
-
 // runExportToDir executes "agent export --format agent-skill --dir <tmp>" and
 // returns the report output and the export directory.
 func runExportToDir(t *testing.T, cfg docent.Config) (report, dir string) {
@@ -128,7 +99,7 @@ func runExportToDir(t *testing.T, cfg docent.Config) (report, dir string) {
 
 	dir = t.TempDir()
 
-	out, err := executeAgentExport(cfg, "agent", "export", "--format", "agent-skill", "--dir", dir)
+	out, err := executeAgent(cfg, nil, "agent", "export", "--format", "agent-skill", "--dir", dir)
 	if err != nil {
 		t.Fatalf("agent export: %v", err)
 	}
@@ -154,7 +125,7 @@ func readExported(t *testing.T, dir, rel string) string {
 func TestAgentExport_writesOneFilePerGuide(t *testing.T) {
 	t.Parallel()
 
-	cfg := docent.Config{Guides: loadExportGuides(t)}
+	cfg := docent.Config{Guides: mustLoadGuides(t, exportFS)}
 
 	report, dir := runExportToDir(t, cfg)
 
@@ -175,7 +146,7 @@ func TestAgentExport_writesOneFilePerGuide(t *testing.T) {
 func TestAgentExport_skillGolden(t *testing.T) {
 	t.Parallel()
 
-	cfg := docent.Config{Guides: loadExportGuides(t)}
+	cfg := docent.Config{Guides: mustLoadGuides(t, exportFS)}
 
 	_, dir := runExportToDir(t, cfg)
 
@@ -189,11 +160,11 @@ func TestAgentExport_skillGolden(t *testing.T) {
 func TestAgentExport_claudeSkillGolden(t *testing.T) {
 	t.Parallel()
 
-	cfg := docent.Config{Guides: loadExportGuides(t)}
+	cfg := docent.Config{Guides: mustLoadGuides(t, exportFS)}
 
 	dir := t.TempDir()
 
-	if _, err := executeAgentExport(cfg, "agent", "export", "--format", "claude-skill", "--dir", dir); err != nil {
+	if _, err := executeAgent(cfg, nil, "agent", "export", "--format", "claude-skill", "--dir", dir); err != nil {
 		t.Fatalf("agent export: %v", err)
 	}
 
@@ -206,7 +177,7 @@ func TestAgentExport_claudeSkillGolden(t *testing.T) {
 func TestAgentExport_skillFrontmatter(t *testing.T) {
 	t.Parallel()
 
-	cfg := docent.Config{Guides: loadExportGuides(t)}
+	cfg := docent.Config{Guides: mustLoadGuides(t, exportFS)}
 
 	_, dir := runExportToDir(t, cfg)
 
@@ -228,7 +199,7 @@ func TestAgentExport_skillFrontmatter(t *testing.T) {
 func TestAgentExport_generatedHeader(t *testing.T) {
 	t.Parallel()
 
-	cfg := docent.Config{Guides: loadExportGuides(t)}
+	cfg := docent.Config{Guides: mustLoadGuides(t, exportFS)}
 
 	_, dir := runExportToDir(t, cfg)
 
@@ -246,13 +217,13 @@ func TestAgentExport_generatedHeader(t *testing.T) {
 func TestAgentExport_flagsRequired(t *testing.T) {
 	t.Parallel()
 
-	cfg := docent.Config{Guides: loadExportGuides(t)}
+	cfg := docent.Config{Guides: mustLoadGuides(t, exportFS)}
 
-	if _, err := executeAgentExport(cfg, "agent", "export", "--dir", t.TempDir()); err == nil {
+	if _, err := executeAgent(cfg, nil, "agent", "export", "--dir", t.TempDir()); err == nil {
 		t.Error("expected error when --format is omitted, got nil")
 	}
 
-	if _, err := executeAgentExport(cfg, "agent", "export", "--format", "agent-skill"); err == nil {
+	if _, err := executeAgent(cfg, nil, "agent", "export", "--format", "agent-skill"); err == nil {
 		t.Error("expected error when --dir is omitted, got nil")
 	}
 }
@@ -264,9 +235,9 @@ func TestAgentExport_flagsRequired(t *testing.T) {
 func TestAgentExport_dirEmptyString(t *testing.T) {
 	t.Parallel()
 
-	cfg := docent.Config{Guides: loadExportGuides(t)}
+	cfg := docent.Config{Guides: mustLoadGuides(t, exportFS)}
 
-	_, err := executeAgentExport(cfg, "agent", "export", "--dir", "")
+	_, err := executeAgent(cfg, nil, "agent", "export", "--dir", "")
 	if err == nil {
 		t.Fatal("expected error for --dir '', got nil")
 	}
@@ -283,9 +254,9 @@ func TestAgentExport_dirEmptyString(t *testing.T) {
 func TestAgentExport_scopeEmptyString(t *testing.T) {
 	t.Parallel()
 
-	cfg := docent.Config{Guides: loadExportGuides(t)}
+	cfg := docent.Config{Guides: mustLoadGuides(t, exportFS)}
 
-	_, err := executeAgentExport(cfg, "agent", "export", "--scope", "")
+	_, err := executeAgent(cfg, nil, "agent", "export", "--scope", "")
 	if err == nil {
 		t.Fatal("expected error for --scope '', got nil")
 	}
@@ -301,9 +272,9 @@ func TestAgentExport_scopeEmptyString(t *testing.T) {
 func TestAgentExport_scopeInvalid(t *testing.T) {
 	t.Parallel()
 
-	cfg := docent.Config{Guides: loadExportGuides(t)}
+	cfg := docent.Config{Guides: mustLoadGuides(t, exportFS)}
 
-	_, err := executeAgentExport(cfg, "agent", "export", "--scope", "bogus")
+	_, err := executeAgent(cfg, nil, "agent", "export", "--scope", "bogus")
 	if err == nil {
 		t.Fatal("expected error for unsupported --scope value, got nil")
 	}
@@ -319,9 +290,9 @@ func TestAgentExport_scopeInvalid(t *testing.T) {
 func TestAgentExport_unknownFormat(t *testing.T) {
 	t.Parallel()
 
-	cfg := docent.Config{Guides: loadExportGuides(t)}
+	cfg := docent.Config{Guides: mustLoadGuides(t, exportFS)}
 
-	_, err := executeAgentExport(cfg, "agent", "export", "--format", "unknown", "--dir", t.TempDir())
+	_, err := executeAgent(cfg, nil, "agent", "export", "--format", "unknown", "--dir", t.TempDir())
 	if err == nil {
 		t.Fatal("expected error for unknown format, got nil")
 	}
@@ -336,23 +307,6 @@ func (stubRenderer) Render(g docent.Guide) string { return "stub: " + g.Slug + "
 
 func (stubRenderer) RelPath(g docent.Guide) string { return g.Slug + ".txt" }
 
-// executeAgentExportOpts is executeAgentExport with NewCommand options.
-func executeAgentExportOpts(cfg docent.Config, opts []docentcobra.Option, args ...string) ([]byte, error) {
-	var buf bytes.Buffer
-
-	hostRoot := &gocobra.Command{Use: "host", Short: "Test host."}
-	hostRoot.SilenceErrors = true
-	hostRoot.SilenceUsage = true
-	hostRoot.SetOut(&buf)
-
-	hostRoot.AddCommand(docentcobra.NewCommand(cfg, opts...))
-	hostRoot.SetArgs(args)
-
-	err := hostRoot.Execute()
-
-	return buf.Bytes(), err
-}
-
 // TestAgentExport_withExtraFormat pins the WithExtraFormat contract: a
 // registered format is selectable via --format and writes through the host
 // renderer; its name appears in the unknown-format error's supported list; a
@@ -361,7 +315,7 @@ func executeAgentExportOpts(cfg docent.Config, opts []docentcobra.Option, args .
 func TestAgentExport_withExtraFormat(t *testing.T) {
 	t.Parallel()
 
-	cfg := docent.Config{Guides: loadExportGuides(t)}
+	cfg := docent.Config{Guides: mustLoadGuides(t, exportFS)}
 
 	t.Run("renders through host renderer", func(t *testing.T) {
 		t.Parallel()
@@ -369,7 +323,7 @@ func TestAgentExport_withExtraFormat(t *testing.T) {
 		dir := t.TempDir()
 		opts := []docentcobra.Option{docentcobra.WithExtraFormat("stub", stubRenderer{})}
 
-		out, err := executeAgentExportOpts(cfg, opts, "agent", "export", "--format", "stub", "--dir", dir)
+		out, err := executeAgent(cfg, opts, "agent", "export", "--format", "stub", "--dir", dir)
 		if err != nil {
 			t.Fatalf("agent export --format stub: %v", err)
 		}
@@ -388,7 +342,7 @@ func TestAgentExport_withExtraFormat(t *testing.T) {
 
 		opts := []docentcobra.Option{docentcobra.WithExtraFormat("stub", stubRenderer{})}
 
-		_, err := executeAgentExportOpts(cfg, opts, "agent", "export", "--format", "nope", "--dir", t.TempDir())
+		_, err := executeAgent(cfg, opts, "agent", "export", "--format", "nope", "--dir", t.TempDir())
 		if err == nil {
 			t.Fatal("expected error for unknown format, got nil")
 		}
@@ -404,7 +358,7 @@ func TestAgentExport_withExtraFormat(t *testing.T) {
 		dir := t.TempDir()
 		opts := []docentcobra.Option{docentcobra.WithExtraFormat("agent-skill", stubRenderer{})}
 
-		if _, err := executeAgentExportOpts(cfg, opts, "agent", "export", "--format", "agent-skill", "--dir", dir); err != nil {
+		if _, err := executeAgent(cfg, opts, "agent", "export", "--format", "agent-skill", "--dir", dir); err != nil {
 			t.Fatalf("agent export: %v", err)
 		}
 
@@ -422,7 +376,7 @@ func TestAgentExport_withExtraFormat(t *testing.T) {
 			docentcobra.WithExtraFormat("stub", nil),
 		}
 
-		_, err := executeAgentExportOpts(cfg, opts, "agent", "export", "--format", "stub", "--dir", t.TempDir())
+		_, err := executeAgent(cfg, opts, "agent", "export", "--format", "stub", "--dir", t.TempDir())
 		if err == nil {
 			t.Fatal("expected unknown-format error for ignored registrations, got nil")
 		}
@@ -443,7 +397,7 @@ func TestAgentExport_configOut(t *testing.T) {
 	var hostOut bytes.Buffer
 
 	cfg := docent.Config{
-		Guides: loadExportGuides(t),
+		Guides: mustLoadGuides(t, exportFS),
 		Out:    &hostOut,
 	}
 
@@ -479,7 +433,7 @@ func TestAgentExport_configOut(t *testing.T) {
 func TestAgentExport_determinism(t *testing.T) {
 	t.Parallel()
 
-	cfg := docent.Config{Guides: loadExportGuides(t)}
+	cfg := docent.Config{Guides: mustLoadGuides(t, exportFS)}
 
 	_, dir1 := runExportToDir(t, cfg)
 	_, dir2 := runExportToDir(t, cfg)
@@ -501,7 +455,7 @@ func TestAgentExport_noGuides(t *testing.T) {
 
 	cfg := docent.Config{} // Guides is nil
 
-	_, err := executeAgentExport(cfg, "agent", "export", "--format", "agent-skill", "--dir", t.TempDir())
+	_, err := executeAgent(cfg, nil, "agent", "export", "--format", "agent-skill", "--dir", t.TempDir())
 	if err == nil {
 		t.Fatal("expected error when no guides are configured, got nil")
 	}
@@ -514,7 +468,7 @@ func TestAgentExport_noGuides(t *testing.T) {
 func TestAgentExport_symlinkEscapeRejected(t *testing.T) {
 	t.Parallel()
 
-	cfg := docent.Config{Guides: loadExportGuides(t)}
+	cfg := docent.Config{Guides: mustLoadGuides(t, exportFS)}
 
 	dir := t.TempDir()
 	outside := t.TempDir()
@@ -525,7 +479,7 @@ func TestAgentExport_symlinkEscapeRejected(t *testing.T) {
 		t.Skipf("symlinks unavailable on this platform: %v", err)
 	}
 
-	_, err := executeAgentExport(cfg, "agent", "export", "--format", "agent-skill", "--dir", dir)
+	_, err := executeAgent(cfg, nil, "agent", "export", "--format", "agent-skill", "--dir", dir)
 	if err == nil {
 		t.Fatal("expected error for symlinked artifact directory, got nil")
 	}
@@ -542,9 +496,9 @@ func TestAgentExport_currentDirTarget(t *testing.T) {
 	work := t.TempDir()
 	t.Chdir(work)
 
-	cfg := docent.Config{Guides: loadExportGuides(t)}
+	cfg := docent.Config{Guides: mustLoadGuides(t, exportFS)}
 
-	out, err := executeAgentExport(cfg, "agent", "export", "--format", "agent-skill", "--dir", ".")
+	out, err := executeAgent(cfg, nil, "agent", "export", "--format", "agent-skill", "--dir", ".")
 	if err != nil {
 		t.Fatalf("agent export --dir .: %v", err)
 	}
@@ -565,21 +519,11 @@ func TestAgentExport_currentDirTarget(t *testing.T) {
 func setHarnessEnv(t *testing.T, set map[string]string) {
 	t.Helper()
 
-	// Every DetectAgent marker is pinned, not just the harness ones: any
+	// Every detection variable is pinned, not just the harness markers: any
 	// runtime's leaked marker would otherwise satisfy detection and break
-	// the undetected-path tests.
-	for _, name := range []string{
-		"AI_AGENT", "AGENT",
-		"CLAUDECODE", "CLAUDE_CODE",
-		"CODEX_SANDBOX", "CODEX_CI", "CODEX_THREAD_ID", "CODEX", "OPENAI_CODEX",
-		"GEMINI_CLI", "GEMINI_CODE_ASSIST",
-		"COPILOT_CLI", "COPILOT", "GITHUB_COPILOT",
-		"CURSOR_TERMINAL", "CURSOR_AGENT",
-		"OPENCODE", "AIDER", "CLINE",
-		"WINDSURF", "WINDSURF_AGENT",
-		"AMAZON_Q", "AWS_Q_DEVELOPER",
-		"CODEIUM", "SRC_CODY",
-	} {
+	// the undetected-path tests. harness.EnvVars is the authoritative list,
+	// so a new marker cannot silently escape the pinning.
+	for _, name := range harness.EnvVars() {
 		t.Setenv(name, set[name])
 	}
 }
@@ -592,9 +536,9 @@ func TestAgentExport_scopeProject(t *testing.T) {
 	setHarnessEnv(t, map[string]string{"CLAUDECODE": "1"})
 	t.Chdir(t.TempDir())
 
-	cfg := docent.Config{Guides: loadExportGuides(t)}
+	cfg := docent.Config{Guides: mustLoadGuides(t, exportFS)}
 
-	out, err := executeAgentExport(cfg, "agent", "export", "--scope", "project")
+	out, err := executeAgent(cfg, nil, "agent", "export", "--scope", "project")
 	if err != nil {
 		t.Fatalf("agent export --scope project: %v", err)
 	}
@@ -624,9 +568,9 @@ func TestAgentExport_scopeUser(t *testing.T) {
 	t.Setenv("HOME", home)        // unix os.UserHomeDir
 	t.Setenv("USERPROFILE", home) // windows os.UserHomeDir
 
-	cfg := docent.Config{Guides: loadExportGuides(t)}
+	cfg := docent.Config{Guides: mustLoadGuides(t, exportFS)}
 
-	if _, err := executeAgentExport(cfg, "agent", "export", "--scope", "user"); err != nil {
+	if _, err := executeAgent(cfg, nil, "agent", "export", "--scope", "user"); err != nil {
 		t.Fatalf("agent export --scope user: %v", err)
 	}
 
@@ -641,9 +585,9 @@ func TestAgentExport_scopeFormatOverride(t *testing.T) {
 	setHarnessEnv(t, map[string]string{"CLAUDECODE": "1"})
 	t.Chdir(t.TempDir())
 
-	cfg := docent.Config{Guides: loadExportGuides(t)}
+	cfg := docent.Config{Guides: mustLoadGuides(t, exportFS)}
 
-	if _, err := executeAgentExport(cfg, "agent", "export", "--scope", "project", "--format", "agent-skill"); err != nil {
+	if _, err := executeAgent(cfg, nil, "agent", "export", "--scope", "project", "--format", "agent-skill"); err != nil {
 		t.Fatalf("agent export: %v", err)
 	}
 
@@ -664,9 +608,9 @@ func TestAgentExport_scopeUndetected(t *testing.T) {
 	setHarnessEnv(t, map[string]string{})
 	t.Chdir(t.TempDir())
 
-	cfg := docent.Config{Guides: loadExportGuides(t)}
+	cfg := docent.Config{Guides: mustLoadGuides(t, exportFS)}
 
-	_, err := executeAgentExport(cfg, "agent", "export", "--scope", "project")
+	_, err := executeAgent(cfg, nil, "agent", "export", "--scope", "project")
 	if err == nil {
 		t.Fatal("expected error when no harness is detected, got nil")
 	}
@@ -687,27 +631,5 @@ func TestAgentExport_scopeUndetected(t *testing.T) {
 func checkExportGolden(t *testing.T, name, got string) {
 	t.Helper()
 
-	goldenPath := filepath.Join("testdata", "golden", name+".txt")
-
-	if *updateExportGolden {
-		if err := os.MkdirAll(filepath.Dir(goldenPath), 0o700); err != nil {
-			t.Fatalf("mkdir %s: %v", filepath.Dir(goldenPath), err)
-		}
-
-		if err := os.WriteFile(goldenPath, []byte(got), 0o600); err != nil {
-			t.Fatalf("write golden %s: %v", goldenPath, err)
-		}
-
-		return
-	}
-
-	wantBytes, err := os.ReadFile(goldenPath)
-	if err != nil {
-		t.Fatalf("read golden %s: %v (run with -update-export to generate)", goldenPath, err)
-	}
-
-	want := string(wantBytes)
-	if got != want {
-		t.Errorf("golden mismatch for %q:\n--- want\n%s\n+++ got\n%s", name, want, got)
-	}
+	checkGolden(t, filepath.Join("testdata", "golden", name+".txt"), got, *updateExportGolden, "update-export")
 }

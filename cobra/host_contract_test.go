@@ -26,8 +26,8 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -268,26 +268,6 @@ func buildHostSchemaRegistry() docent.SchemaRegistry {
 	}
 }
 
-// executeHostAgentSchema mounts docent's agent command group on the given host
-// root, runs "agent schema", and returns the captured JSON bytes. The command
-// is executed against cfg so that schema filtering (--path) and WriteText hooks
-// can be tested in the same helper. opts are forwarded to NewCommand so
-// extra-commands tests can use the same helper without duplication.
-func executeHostAgentSchema(cfg docent.Config, opts []docentcobra.Option, args ...string) ([]byte, error) {
-	var buf bytes.Buffer
-
-	host := &gocobra.Command{Use: "host-test", Short: "Test host."}
-	host.SilenceErrors = true
-	host.SilenceUsage = true
-	host.SetOut(&buf)
-	host.AddCommand(docentcobra.NewCommand(cfg, opts...))
-	host.SetArgs(args)
-
-	err := host.Execute()
-
-	return buf.Bytes(), err
-}
-
 // TestHostContract_agentSchemaGolden is the primary golden test for Sub-AC 3d.
 // It:
 //  1. Builds a a real-world host CLI-faithful cobra tree.
@@ -308,7 +288,7 @@ func TestHostContract_agentSchemaGolden(t *testing.T) {
 
 	cfg := docent.Config{Command: enriched}
 
-	out, err := executeHostAgentSchema(cfg, nil, "agent", "schema")
+	out, err := executeAgent(cfg, nil, "agent", "schema")
 	if err != nil {
 		t.Fatalf("agent schema: %v", err)
 	}
@@ -325,7 +305,7 @@ func TestHostContract_determinism(t *testing.T) {
 	root := buildHostFaithfulTree()
 	reg := buildHostSchemaRegistry()
 
-	first, err := executeHostAgentSchema(
+	first, err := executeAgent(
 		docent.Config{Command: reg.Apply(docentcobra.Tree(root))},
 		nil,
 		"agent", "schema",
@@ -334,7 +314,7 @@ func TestHostContract_determinism(t *testing.T) {
 		t.Fatalf("first run: %v", err)
 	}
 
-	second, err := executeHostAgentSchema(
+	second, err := executeAgent(
 		docent.Config{Command: reg.Apply(docentcobra.Tree(root))},
 		nil,
 		"agent", "schema",
@@ -455,7 +435,7 @@ func TestHostContract_enumValuesPresent(t *testing.T) {
 			continue
 		}
 
-		if !stringSliceEq(found.Enum, tc.wantEnum) {
+		if !slices.Equal(found.Enum, tc.wantEnum) {
 			t.Errorf("command %q flag --%s: Enum = %v, want %v",
 				tc.cmdPath, tc.flagName, found.Enum, tc.wantEnum)
 		}
@@ -507,7 +487,7 @@ func assertFlagGroupPresent(t *testing.T, cmdPath string, groups []docent.FlagGr
 	}
 
 	for _, g := range matching {
-		if stringSliceEq(g.Flags, wantFlags) {
+		if slices.Equal(g.Flags, wantFlags) {
 			return
 		}
 	}
@@ -695,7 +675,7 @@ func TestHostContract_pathFlag(t *testing.T) {
 	tree := docentcobra.Tree(root)
 	cfg := docent.Config{Command: tree}
 
-	out, err := executeHostAgentSchema(cfg, nil, "agent", "schema", "--path", "host issue create")
+	out, err := executeAgent(cfg, nil, "agent", "schema", "--path", "host issue create")
 	if err != nil {
 		t.Fatalf("agent schema --path: %v", err)
 	}
@@ -889,7 +869,7 @@ func TestHostContract_extraCommandsDontConflict(t *testing.T) {
 	cfg := docent.Config{Command: tree}
 
 	// Built-in commands must still work after mounting extra commands.
-	out, err := executeHostAgentSchema(
+	out, err := executeAgent(
 		cfg,
 		[]docentcobra.Option{docentcobra.WithExtraCommands(adfMatrix, fieldTypes)},
 		"agent", "schema",
@@ -913,27 +893,5 @@ func TestHostContract_extraCommandsDontConflict(t *testing.T) {
 func checkHostGolden(t *testing.T, name, got string) {
 	t.Helper()
 
-	goldenPath := filepath.Join("testdata", "golden", name+".json")
-
-	if *updateHostGolden {
-		if err := os.MkdirAll(filepath.Dir(goldenPath), 0o700); err != nil {
-			t.Fatalf("mkdir %s: %v", filepath.Dir(goldenPath), err)
-		}
-
-		if err := os.WriteFile(goldenPath, []byte(got), 0o600); err != nil {
-			t.Fatalf("write golden %s: %v", goldenPath, err)
-		}
-
-		return
-	}
-
-	wantBytes, err := os.ReadFile(goldenPath)
-	if err != nil {
-		t.Fatalf("read golden %s: %v (run with -update-host to generate)", goldenPath, err)
-	}
-
-	want := string(wantBytes)
-	if got != want {
-		t.Errorf("golden mismatch for %q:\n--- want\n%s\n+++ got\n%s", name, want, got)
-	}
+	checkGolden(t, filepath.Join("testdata", "golden", name+".json"), got, *updateHostGolden, "update-host")
 }

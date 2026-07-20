@@ -264,22 +264,25 @@ are concatenated in canonical order, separated by form-feed lines.`,
 	cmd.Flags().BoolVar(&all, "all", false, "Emit all guides concatenated in canonical order.")
 
 	cmd.MarkFlagsMutuallyExclusive("section", "all")
-	registerSectionCompletion(cmd)
+
+	// Completion derives from the core accessor so a StandardVersion revision
+	// cannot leave the shell offering stale headings.
+	mustRegisterCompletion(cmd, "section", docent.SectionHeadings)
 
 	return cmd
 }
 
-// registerSectionCompletion wires shell completion for --section from the
-// standard section headings. Registration only fails when the flag is
-// missing, which cannot happen — it was just defined on this command.
-func registerSectionCompletion(cmd *gocobra.Command) {
-	err := cmd.RegisterFlagCompletionFunc("section",
+// mustRegisterCompletion wires shell completion for a flag from a values
+// source. Registration only fails when the flag is missing, which cannot
+// happen — every caller registers completion for a flag defined on cmd
+// moments earlier.
+func mustRegisterCompletion(cmd *gocobra.Command, flag string, values func() []string) {
+	err := cmd.RegisterFlagCompletionFunc(flag,
 		func(_ *gocobra.Command, _ []string, _ string) ([]string, gocobra.ShellCompDirective) {
-			return []string{"Decide", "Run", "Save", "Preconditions", "Recover", "Next"},
-				gocobra.ShellCompDirectiveNoFileComp
+			return values(), gocobra.ShellCompDirectiveNoFileComp
 		})
 	if err != nil {
-		panic(fmt.Sprintf("docent: register --section completion: %v", err))
+		panic(fmt.Sprintf("docent: register --%s completion: %v", flag, err))
 	}
 }
 
@@ -427,22 +430,9 @@ at that command is emitted, using the space-separated path form (e.g. "issue cre
 
 	cmd.Flags().StringVar(&path, "path", "", `Subset the schema to the named command subtree (e.g. "issue create").`)
 
-	registerPathCompletion(cmd, cfg)
+	mustRegisterCompletion(cmd, "path", func() []string { return commandPaths(cfg.Command) })
 
 	return cmd
-}
-
-// registerPathCompletion wires shell completion for --path from the host's
-// command tree. Registration only fails when the flag is missing, which
-// cannot happen — it was just defined on this command.
-func registerPathCompletion(cmd *gocobra.Command, cfg docent.Config) {
-	err := cmd.RegisterFlagCompletionFunc("path",
-		func(_ *gocobra.Command, _ []string, _ string) ([]string, gocobra.ShellCompDirective) {
-			return commandPaths(cfg.Command), gocobra.ShellCompDirectiveNoFileComp
-		})
-	if err != nil {
-		panic(fmt.Sprintf("docent: register --path completion: %v", err))
-	}
 }
 
 // commandPaths returns every path in the tree in depth-first pre-order.
@@ -598,8 +588,10 @@ written path.`,
 
 	cmd.MarkFlagsOneRequired("dir", "scope")
 	cmd.MarkFlagsMutuallyExclusive("dir", "scope")
-	registerFormatCompletion(cmd, registry)
-	registerScopeCompletion(cmd)
+	mustRegisterCompletion(cmd, "format", func() []string { return formatNames(registry) })
+	mustRegisterCompletion(cmd, "scope", func() []string {
+		return []string{harness.ScopeProject, harness.ScopeUser}
+	})
 
 	return cmd
 }
@@ -671,9 +663,9 @@ func stampContractVersion(tree docent.Command, version string) docent.Command {
 		return tree
 	}
 
-	// FindByPath deep-copies, detaching the returned node — and its
-	// extensions map — from cfg.Command before the stamp below.
-	stamped, _ := docent.FindByPath(tree, tree.Path)
+	// Clone detaches the emitted node — and its extensions map — from
+	// cfg.Command before the stamp below.
+	stamped := tree.Clone()
 
 	if stamped.Extensions == nil {
 		stamped.Extensions = map[string]any{}
@@ -694,32 +686,6 @@ func supportedHarnessNames() []string {
 	}
 
 	return names
-}
-
-// registerFormatCompletion wires shell completion for --format from the
-// supported format list. Registration only fails when the flag is missing,
-// which cannot happen — it was just defined on this command.
-func registerFormatCompletion(cmd *gocobra.Command, formats []exportFormat) {
-	err := cmd.RegisterFlagCompletionFunc("format",
-		func(_ *gocobra.Command, _ []string, _ string) ([]string, gocobra.ShellCompDirective) {
-			return formatNames(formats), gocobra.ShellCompDirectiveNoFileComp
-		})
-	if err != nil {
-		panic(fmt.Sprintf("docent: register --format completion: %v", err))
-	}
-}
-
-// registerScopeCompletion wires shell completion for --scope from the scope
-// list. Registration only fails when the flag is missing, which cannot
-// happen — it was just defined on this command.
-func registerScopeCompletion(cmd *gocobra.Command) {
-	err := cmd.RegisterFlagCompletionFunc("scope",
-		func(_ *gocobra.Command, _ []string, _ string) ([]string, gocobra.ShellCompDirective) {
-			return []string{harness.ScopeProject, harness.ScopeUser}, gocobra.ShellCompDirectiveNoFileComp
-		})
-	if err != nil {
-		panic(fmt.Sprintf("docent: register --scope completion: %v", err))
-	}
 }
 
 // runExport renders every guide and writes one artifact per guide under dir,

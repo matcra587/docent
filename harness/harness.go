@@ -104,6 +104,22 @@ func Agents() []string {
 	return append(names, "amp")
 }
 
+// EnvVars lists every environment variable detection consults: the AI_AGENT
+// and AGENT overrides, then each agent's markers in Agents order. Hosts and
+// tests use it to scrub or pin the whole detection surface — clearing only
+// some variables lets a marker leaked by the invoking runtime satisfy
+// detection. The returned slice is a fresh copy.
+func EnvVars() []string {
+	ms := agentMarkers()
+
+	vars := []string{"AI_AGENT", "AGENT"}
+	for _, m := range ms {
+		vars = append(vars, m.envVars...)
+	}
+
+	return vars
+}
+
 // validAgentName constrains AI_AGENT override values to a plain identifier
 // so an arbitrary environment string cannot ride into host output unvetted.
 var validAgentName = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)

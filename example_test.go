@@ -2,6 +2,7 @@ package docent_test
 
 import (
 	"fmt"
+	"strings"
 	"testing/fstest"
 
 	"github.com/matcra587/docent"
@@ -80,4 +81,13 @@ func ExampleGuideSet_Get() {
 	// Output:
 	// true Decide
 	// false
+}
+
+// ExampleSectionHeadings pins the standard's required section order — the
+// vocabulary shell completion and tooling derive from.
+func ExampleSectionHeadings() {
+	fmt.Println(strings.Join(docent.SectionHeadings(), ", "))
+
+	// Output:
+	// Decide, Run, Save, Preconditions, Recover, Next
 }

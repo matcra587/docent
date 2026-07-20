@@ -37,25 +37,6 @@ func buildSchemaHost() (*gocobra.Command, docent.Command) {
 	return root, schema
 }
 
-// executeAgentSchema mounts the agent command group on a test root, sets args,
-// captures stdout, and executes. It returns the captured bytes and any error.
-// Errors and usage output are silenced so test output stays clean.
-func executeAgentSchema(cfg docent.Config, args ...string) ([]byte, error) {
-	var buf bytes.Buffer
-
-	hostRoot := &gocobra.Command{Use: "host", Short: "Test host."}
-	hostRoot.SilenceErrors = true
-	hostRoot.SilenceUsage = true
-	hostRoot.SetOut(&buf)
-
-	hostRoot.AddCommand(docentcobra.NewCommand(cfg))
-	hostRoot.SetArgs(args)
-
-	err := hostRoot.Execute()
-
-	return buf.Bytes(), err
-}
-
 // TestAgentSchema_fullTree verifies that "agent schema" with no flags emits
 // the full command tree as valid JSON with the correct root name.
 func TestAgentSchema_fullTree(t *testing.T) {
@@ -64,7 +45,7 @@ func TestAgentSchema_fullTree(t *testing.T) {
 	_, schema := buildSchemaHost()
 	cfg := docent.Config{Command: schema}
 
-	out, err := executeAgentSchema(cfg, "agent", "schema")
+	out, err := executeAgent(cfg, nil, "agent", "schema")
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
@@ -114,7 +95,7 @@ func TestAgentSchema_contractVersion(t *testing.T) {
 	t.Run("full tree stamps and overwrites host entry", func(t *testing.T) {
 		t.Parallel()
 
-		out, err := executeAgentSchema(cfg, "agent", "schema")
+		out, err := executeAgent(cfg, nil, "agent", "schema")
 		if err != nil {
 			t.Fatalf("Execute: %v", err)
 		}
@@ -138,7 +119,7 @@ func TestAgentSchema_contractVersion(t *testing.T) {
 	t.Run("path subtree stamps the emitted node", func(t *testing.T) {
 		t.Parallel()
 
-		out, err := executeAgentSchema(cfg, "agent", "schema", "--path", "app create")
+		out, err := executeAgent(cfg, nil, "agent", "schema", "--path", "app create")
 		if err != nil {
 			t.Fatalf("Execute: %v", err)
 		}
@@ -151,7 +132,7 @@ func TestAgentSchema_contractVersion(t *testing.T) {
 
 		bare := docent.Config{Command: schema}
 
-		out, err := executeAgentSchema(bare, "agent", "schema", "--path", "app create")
+		out, err := executeAgent(bare, nil, "agent", "schema", "--path", "app create")
 		if err != nil {
 			t.Fatalf("Execute: %v", err)
 		}
@@ -165,23 +146,6 @@ func TestAgentSchema_contractVersion(t *testing.T) {
 			t.Error("contract_version present with empty Config.ContractVersion")
 		}
 	})
-}
-
-// executeAgentSchemaOpts is executeAgentSchema with NewCommand options.
-func executeAgentSchemaOpts(cfg docent.Config, opts []docentcobra.Option, args ...string) ([]byte, error) {
-	var buf bytes.Buffer
-
-	hostRoot := &gocobra.Command{Use: "host", Short: "Test host."}
-	hostRoot.SilenceErrors = true
-	hostRoot.SilenceUsage = true
-	hostRoot.SetOut(&buf)
-
-	hostRoot.AddCommand(docentcobra.NewCommand(cfg, opts...))
-	hostRoot.SetArgs(args)
-
-	err := hostRoot.Execute()
-
-	return buf.Bytes(), err
 }
 
 // TestAgentSchema_withSchemaTransform pins the WithSchemaTransform contract:
@@ -203,7 +167,7 @@ func TestAgentSchema_withSchemaTransform(t *testing.T) {
 		opts := []docentcobra.Option{docentcobra.WithSchemaTransform(envelope)}
 		stamped := docent.Config{Command: schema, ContractVersion: "3.0.0"}
 
-		out, err := executeAgentSchemaOpts(stamped, opts, "agent", "schema")
+		out, err := executeAgent(stamped, opts, "agent", "schema")
 		if err != nil {
 			t.Fatalf("Execute: %v", err)
 		}
@@ -237,7 +201,7 @@ func TestAgentSchema_withSchemaTransform(t *testing.T) {
 			docentcobra.WithSchemaTransform(func(b []byte) ([]byte, error) { return append(b, "+second"...), nil }),
 		}
 
-		out, err := executeAgentSchemaOpts(cfg, opts, "agent", "schema")
+		out, err := executeAgent(cfg, opts, "agent", "schema")
 		if err != nil {
 			t.Fatalf("Execute: %v", err)
 		}
@@ -255,7 +219,7 @@ func TestAgentSchema_withSchemaTransform(t *testing.T) {
 			docentcobra.WithSchemaTransform(func([]byte) ([]byte, error) { return nil, boom }),
 		}
 
-		_, err := executeAgentSchemaOpts(cfg, opts, "agent", "schema")
+		_, err := executeAgent(cfg, opts, "agent", "schema")
 		if !errors.Is(err, boom) {
 			t.Errorf("error = %v; want errors.Is(err, boom)", err)
 		}
@@ -270,7 +234,7 @@ func TestAgentSchema_pathFlag_found(t *testing.T) {
 	_, schema := buildSchemaHost()
 	cfg := docent.Config{Command: schema}
 
-	out, err := executeAgentSchema(cfg, "agent", "schema", "--path", "app create")
+	out, err := executeAgent(cfg, nil, "agent", "schema", "--path", "app create")
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
@@ -305,7 +269,7 @@ func TestAgentSchema_pathFlag_found_root(t *testing.T) {
 	_, schema := buildSchemaHost()
 	cfg := docent.Config{Command: schema}
 
-	out, err := executeAgentSchema(cfg, "agent", "schema", "--path", "app")
+	out, err := executeAgent(cfg, nil, "agent", "schema", "--path", "app")
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
@@ -328,7 +292,7 @@ func TestAgentSchema_pathFlag_missing(t *testing.T) {
 	_, schema := buildSchemaHost()
 	cfg := docent.Config{Command: schema}
 
-	_, err := executeAgentSchema(cfg, "agent", "schema", "--path", "app nonexistent")
+	_, err := executeAgent(cfg, nil, "agent", "schema", "--path", "app nonexistent")
 	if err == nil {
 		t.Fatal("Execute: expected error for unknown --path, got nil")
 	}
@@ -345,7 +309,7 @@ func TestAgentSchema_pathFlag_emptyTree(t *testing.T) {
 
 	cfg := docent.Config{} // zero-value: Command is zero Command (Path == "")
 
-	_, err := executeAgentSchema(cfg, "agent", "schema", "--path", "anything")
+	_, err := executeAgent(cfg, nil, "agent", "schema", "--path", "anything")
 	if err == nil {
 		t.Fatal("Execute: expected error for path on empty tree, got nil")
 	}
@@ -364,7 +328,7 @@ func TestAgentSchema_onlyTargetedSubtree(t *testing.T) {
 	cfg := docent.Config{Command: schema}
 
 	// Ask for "app list" — a hidden leaf with no children.
-	out, err := executeAgentSchema(cfg, "agent", "schema", "--path", "app list")
+	out, err := executeAgent(cfg, nil, "agent", "schema", "--path", "app list")
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
@@ -453,12 +417,12 @@ func TestAgentSchema_determinism(t *testing.T) {
 	_, schema := buildSchemaHost()
 	cfg := docent.Config{Command: schema}
 
-	first, err := executeAgentSchema(cfg, "agent", "schema")
+	first, err := executeAgent(cfg, nil, "agent", "schema")
 	if err != nil {
 		t.Fatalf("first Execute: %v", err)
 	}
 
-	second, err := executeAgentSchema(cfg, "agent", "schema")
+	second, err := executeAgent(cfg, nil, "agent", "schema")
 	if err != nil {
 		t.Fatalf("second Execute: %v", err)
 	}

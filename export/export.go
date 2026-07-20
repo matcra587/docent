@@ -1,8 +1,9 @@
 package export
 
 import (
+	"maps"
 	"path"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -161,14 +162,7 @@ func renderSkill(fm [][2]string, g docent.Guide) string {
 	if len(g.Metadata) > 0 {
 		b.WriteString("metadata:\n")
 
-		keys := make([]string, 0, len(g.Metadata))
-		for k := range g.Metadata {
-			keys = append(keys, k)
-		}
-
-		sort.Strings(keys)
-
-		for _, k := range keys {
+		for _, k := range slices.Sorted(maps.Keys(g.Metadata)) {
 			// Keys are host-authored and may carry YAML-significant
 			// characters; quoting them keeps the emitted frontmatter valid
 			// YAML for any loadable guide, matching the value treatment.

@@ -1,6 +1,7 @@
 package cobra_test
 
 import (
+	"slices"
 	"testing"
 
 	"github.com/matcra587/docent"
@@ -261,7 +262,7 @@ func TestTree_enumFlag(t *testing.T) {
 	}
 
 	wantEnum := []string{"json", "table", "yaml"}
-	if !stringSliceEq(fmtFlag.Enum, wantEnum) {
+	if !slices.Equal(fmtFlag.Enum, wantEnum) {
 		t.Errorf("--format Enum = %v, want %v", fmtFlag.Enum, wantEnum)
 	}
 }
@@ -283,7 +284,7 @@ func TestTree_mutuallyExclusiveGroup(t *testing.T) {
 	}
 
 	want := []string{"output", "quiet"}
-	if !stringSliceEq(mexGroups[0].Flags, want) {
+	if !slices.Equal(mexGroups[0].Flags, want) {
 		t.Errorf("mutually_exclusive flags = %v, want %v", mexGroups[0].Flags, want)
 	}
 }
@@ -305,7 +306,7 @@ func TestTree_requiredTogetherGroup(t *testing.T) {
 	}
 
 	want := []string{"token", "user"}
-	if !stringSliceEq(rtGroups[0].Flags, want) {
+	if !slices.Equal(rtGroups[0].Flags, want) {
 		t.Errorf("required_together flags = %v, want %v", rtGroups[0].Flags, want)
 	}
 }
@@ -328,7 +329,7 @@ func TestTree_oneRequiredGroup(t *testing.T) {
 	}
 
 	want := []string{"json", "yaml"}
-	if !stringSliceEq(orGroups[0].Flags, want) {
+	if !slices.Equal(orGroups[0].Flags, want) {
 		t.Errorf("one_required flags = %v, want %v", orGroups[0].Flags, want)
 	}
 }
@@ -347,7 +348,7 @@ func TestTree_aliasesAndDeprecated(t *testing.T) {
 	}
 
 	wantAliases := []string{"enumerate", "ls"}
-	if !stringSliceEq(list.Aliases, wantAliases) {
+	if !slices.Equal(list.Aliases, wantAliases) {
 		t.Errorf("Aliases = %v, want %v (sorted)", list.Aliases, wantAliases)
 	}
 
@@ -385,7 +386,7 @@ func TestTree_clibEnumBridge(t *testing.T) {
 	}
 
 	wantEnum := []string{"debug", "info", "warn"}
-	if !stringSliceEq(levelFlag.Enum, wantEnum) {
+	if !slices.Equal(levelFlag.Enum, wantEnum) {
 		t.Errorf("--level Enum = %v, want %v (from clib.extra, sorted)", levelFlag.Enum, wantEnum)
 	}
 
@@ -544,18 +545,18 @@ func TestTree_groupWithInheritedMember(t *testing.T) {
 	want := []string{"force", "verbose"}
 
 	mex := flagGroupsByKind(apply.FlagGroups, docent.FlagGroupMutuallyExclusive)
-	if len(mex) != 1 || !stringSliceEq(mex[0].Flags, want) {
+	if len(mex) != 1 || !slices.Equal(mex[0].Flags, want) {
 		t.Errorf("apply mutually_exclusive groups = %+v, want one group %v", mex, want)
 	}
 
 	for _, g := range flagGroupsByKind(cmd.FlagGroups, docent.FlagGroupMutuallyExclusive) {
-		if stringSliceEq(g.Flags, want) {
+		if slices.Equal(g.Flags, want) {
 			t.Errorf("the force/verbose group leaked to the root: %+v", g)
 		}
 	}
 
 	for _, g := range flagGroupsByKind(create.FlagGroups, docent.FlagGroupMutuallyExclusive) {
-		if stringSliceEq(g.Flags, want) {
+		if slices.Equal(g.Flags, want) {
 			t.Errorf("the force/verbose group leaked to create: %+v", g)
 		}
 	}
@@ -712,11 +713,11 @@ func TestTree_multipleMutexGroups(t *testing.T) {
 	}
 
 	// Groups must be sorted: {alpha, beta} < {delta, gamma}.
-	if !stringSliceEq(mexGroups[0].Flags, []string{"alpha", "beta"}) {
+	if !slices.Equal(mexGroups[0].Flags, []string{"alpha", "beta"}) {
 		t.Errorf("group[0] = %v, want [alpha beta]", mexGroups[0].Flags)
 	}
 
-	if !stringSliceEq(mexGroups[1].Flags, []string{"delta", "gamma"}) {
+	if !slices.Equal(mexGroups[1].Flags, []string{"delta", "gamma"}) {
 		t.Errorf("group[1] = %v, want [delta gamma]", mexGroups[1].Flags)
 	}
 }
@@ -807,21 +808,6 @@ func flagGroupsByKind(groups []docent.FlagGroup, kind docent.FlagGroupKind) []do
 	return out
 }
 
-// stringSliceEq reports whether a and b contain the same strings in the same order.
-func stringSliceEq(a, b []string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-
-	return true
-}
-
 // commandsEqual does a structural equality check on two Commands for determinism testing.
 func commandsEqual(a, b docent.Command) bool {
 	if a.Name != b.Name || a.Path != b.Path || a.Description != b.Description ||
@@ -844,7 +830,7 @@ func flagsEqual(a, b []docent.Flag) bool {
 		af, bf := a[i], b[i]
 		if af.Name != bf.Name || af.Type != bf.Type || af.Default != bf.Default ||
 			af.Required != bf.Required || af.Persistent != bf.Persistent || af.Shorthand != bf.Shorthand ||
-			!stringSliceEq(af.Enum, bf.Enum) {
+			!slices.Equal(af.Enum, bf.Enum) {
 			return false
 		}
 	}
@@ -859,7 +845,7 @@ func groupsEqual(a, b []docent.FlagGroup) bool {
 	}
 
 	for i := range a {
-		if a[i].Kind != b[i].Kind || !stringSliceEq(a[i].Flags, b[i].Flags) {
+		if a[i].Kind != b[i].Kind || !slices.Equal(a[i].Flags, b[i].Flags) {
 			return false
 		}
 	}
