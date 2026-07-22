@@ -4,6 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+	"slices"
+	"sort"
+	"strings"
 )
 
 // Command is a framework-neutral schema IR node for one command in a CLI tree.
@@ -77,6 +80,14 @@ type Command struct {
 
 	// Children contains this command's direct subcommands, sorted by Name.
 	Children []Command `json:"children,omitempty"`
+
+	// Defs holds shared JSON Schema bodies hoisted out of the tree's
+	// input/output schemas, keyed by definition name. Populated by
+	// PoolShapes on the emitted root — the bodies it replaces become
+	// {"$ref": "#/$defs/<name>"} objects, and the pointer form resolves
+	// against the emission document, so the key is emitted as "$defs" per
+	// JSON Schema convention. Meaningful only on the root of an emission.
+	Defs map[string]any `json:"$defs,omitempty"`
 }
 
 // MarshalSchema renders cmd as the canonical schema JSON emission: compact
@@ -89,9 +100,10 @@ type Command struct {
 // docenttest.SchemaGolden both emit through it (each appending the
 // artifact's trailing newline at its write site), so a golden pinned with
 // one cannot drift from the bytes the other writes. The adapter may further
-// stamp a contract version, strip embedded shapes from the full tree, and
-// apply host schema transforms on top of this shape; goldens that must pin
-// those effects golden the command output itself.
+// stamp a contract version, strip embedded shapes from the full tree, pool
+// repeated shape bodies into $defs, and apply host schema transforms on
+// top of this shape; goldens that must pin those effects golden the
+// command output itself.
 func MarshalSchema(cmd Command) ([]byte, error) {
 	data, err := json.Marshal(cmd)
 	if err != nil {
@@ -142,6 +154,198 @@ func stripShapes(cmd *Command) {
 	for i := range cmd.Children {
 		stripShapes(&cmd.Children[i])
 	}
+}
+
+// shapeRefOverhead approximates the emitted bytes of one
+// {"$ref":"#/$defs/<name>"} object and shapeDefsOverhead the per-entry
+// cost of a $defs slot beyond the body itself, both assuming a
+// three-character name. The estimates only gate pooling of small bodies —
+// where inlining is cheaper than referencing — so being off by a byte
+// cannot flip the decision on a body worth pooling.
+const (
+	shapeRefOverhead  = 22
+	shapeDefsOverhead = 7
+)
+
+// PoolShapes returns a deep copy of c in which input and output schema
+// bodies repeated across the tree are hoisted into the root's Defs map and
+// each occurrence replaced by a JSON Schema reference object,
+// {"$ref": "#/$defs/<name>"} — real hosts register one result shell on
+// many sibling commands, and emitting it once instead of N times is where
+// the embedded-shape bytes go. Only net wins are pooled: a body too small
+// to pay for its reference objects and $defs entry stays inline. Bodies
+// carrying document-relative references of their own ("$ref" values
+// starting with "#", or "$defs"/"definitions" keys) are never pooled —
+// hoisting would silently change what those pointers resolve against.
+// Names are deterministic: "d1", "d2", … in first-occurrence order of a
+// pre-order walk (input before output per node), skipping any names an
+// existing Defs map on c already uses. c itself is never modified.
+func (c Command) PoolShapes() Command {
+	out := c.Clone()
+
+	stats := map[string]*shapeStat{}
+	order := 0
+	collectShapes(&out, stats, &order)
+
+	names := pooledShapeNames(stats, out.Defs)
+	if len(names) == 0 {
+		return out
+	}
+
+	if out.Defs == nil {
+		out.Defs = make(map[string]any, len(names))
+	}
+
+	for key, name := range names {
+		out.Defs[name] = stats[key].norm
+	}
+
+	replaceShapes(&out, names)
+
+	return out
+}
+
+// shapeStat accumulates one distinct schema body's occurrences during the
+// pooling walk. The map key is the body's canonical JSON serialization —
+// encoding/json sorts map keys, so equal bodies collide regardless of how
+// the host built them.
+type shapeStat struct {
+	count int
+	order int
+	size  int
+	norm  any
+}
+
+// collectShapes tallies every schema body in the tree in pre-order, input
+// before output per node. A body that fails to marshal is skipped here and
+// left inline — MarshalSchema will report it.
+func collectShapes(cmd *Command, stats map[string]*shapeStat, order *int) {
+	for _, body := range []map[string]any{cmd.InputSchema, cmd.OutputSchema} {
+		if body == nil {
+			continue
+		}
+
+		data, err := json.Marshal(body)
+		if err != nil {
+			continue
+		}
+
+		if s, ok := stats[string(data)]; ok {
+			s.count++
+
+			continue
+		}
+
+		// Reparse the bytes just produced so the pooled $defs entry is
+		// JSON-native regardless of the typed containers the host built
+		// the schema from; unmarshal of freshly marshaled bytes cannot fail.
+		var norm any
+
+		_ = json.Unmarshal(data, &norm)
+
+		stats[string(data)] = &shapeStat{count: 1, order: *order, size: len(data), norm: norm}
+		*order++
+	}
+
+	for i := range cmd.Children {
+		collectShapes(&cmd.Children[i], stats, order)
+	}
+}
+
+// pooledShapeNames selects the bodies worth pooling and assigns their
+// deterministic definition names, avoiding any key taken holds.
+func pooledShapeNames(stats map[string]*shapeStat, taken map[string]any) map[string]string {
+	var keys []string
+
+	for key, s := range stats {
+		inline := s.count * s.size
+		pooled := s.count*shapeRefOverhead + s.size + shapeDefsOverhead
+
+		if s.count < 2 || pooled >= inline || hasDocRelativeRefs(s.norm) {
+			continue
+		}
+
+		keys = append(keys, key)
+	}
+
+	sort.Slice(keys, func(i, j int) bool { return stats[keys[i]].order < stats[keys[j]].order })
+
+	names := make(map[string]string, len(keys))
+	next := 1
+
+	for _, key := range keys {
+		name := fmt.Sprintf("d%d", next)
+		for _, exists := taken[name]; exists; _, exists = taken[name] {
+			next++
+			name = fmt.Sprintf("d%d", next)
+		}
+
+		names[key] = name
+		next++
+	}
+
+	return names
+}
+
+// hasDocRelativeRefs reports whether a normalized schema body contains a
+// document-relative JSON pointer ("$ref" starting with "#") or its own
+// definitions section — either makes hoisting unsafe, because the body's
+// internal pointers would resolve against the emission document instead
+// of the body itself.
+func hasDocRelativeRefs(v any) bool {
+	switch t := v.(type) {
+	case map[string]any:
+		for key, val := range t {
+			if key == "$defs" || key == "definitions" {
+				return true
+			}
+
+			if key == "$ref" {
+				if s, ok := val.(string); ok && strings.HasPrefix(s, "#") {
+					return true
+				}
+			}
+
+			if hasDocRelativeRefs(val) {
+				return true
+			}
+		}
+	case []any:
+		return slices.ContainsFunc(t, hasDocRelativeRefs)
+	}
+
+	return false
+}
+
+// replaceShapes rewrites every pooled body to its reference object in
+// place, recursing through children. The caller owns the copy being
+// rewritten.
+func replaceShapes(cmd *Command, names map[string]string) {
+	cmd.InputSchema = refOrBody(cmd.InputSchema, names)
+	cmd.OutputSchema = refOrBody(cmd.OutputSchema, names)
+
+	for i := range cmd.Children {
+		replaceShapes(&cmd.Children[i], names)
+	}
+}
+
+// refOrBody returns the reference object for a pooled body, or the body
+// unchanged when it was not pooled.
+func refOrBody(body map[string]any, names map[string]string) map[string]any {
+	if body == nil {
+		return nil
+	}
+
+	data, err := json.Marshal(body)
+	if err != nil {
+		return body
+	}
+
+	if name, ok := names[string(data)]; ok {
+		return map[string]any{"$ref": "#/$defs/" + name}
+	}
+
+	return body
 }
 
 // Flag is a framework-neutral flag definition. Default holds the value exactly
@@ -343,6 +547,10 @@ func copyCommandShallow(cmd Command) Command {
 
 	if cmd.Extensions != nil {
 		out.Extensions = deepCopyMapAny(cmd.Extensions)
+	}
+
+	if cmd.Defs != nil {
+		out.Defs = deepCopyMapAny(cmd.Defs)
 	}
 
 	if cmd.InputSchema != nil {

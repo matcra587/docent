@@ -674,6 +674,98 @@ func TestCommand_StripShapes(t *testing.T) {
 	}
 }
 
+// poolFixtureShape returns the (deliberately large) schema body the pooling
+// tests register on multiple commands.
+func poolFixtureShape() map[string]any {
+	return map[string]any{
+		"type":     "object",
+		"required": []any{"items"},
+		"properties": map[string]any{
+			"items":  map[string]any{"type": "array", "items": map[string]any{"type": "object"}},
+			"cursor": map[string]any{"type": "string"},
+		},
+	}
+}
+
+// TestCommand_PoolShapes pins the $defs pooling contract: a body repeated
+// across the tree is hoisted once and referenced from every occurrence,
+// unique bodies stay inline, and the receiver is never mutated.
+func TestCommand_PoolShapes(t *testing.T) {
+	t.Parallel()
+
+	tree := buildSchemaTestTree()
+	findSchemaChild(tree, "create").OutputSchema = poolFixtureShape()
+	findSchemaChild(tree, "list").OutputSchema = poolFixtureShape()
+	findSchemaChild(tree, "create").InputSchema = map[string]any{
+		"type":        "object",
+		"description": "unique to create; must stay inline",
+	}
+
+	pooled := tree.PoolShapes()
+
+	if len(pooled.Defs) != 1 || pooled.Defs["d1"] == nil {
+		t.Fatalf(`Defs = %v, want exactly {"d1": <shared shape>}`, pooled.Defs)
+	}
+
+	for _, name := range []string{"create", "list"} {
+		got := findSchemaChild(pooled, name).OutputSchema
+		if len(got) != 1 || got["$ref"] != "#/$defs/d1" {
+			t.Errorf(`%s output schema = %v, want {"$ref": "#/$defs/d1"}`, name, got)
+		}
+	}
+
+	if _, isRef := findSchemaChild(pooled, "create").InputSchema["$ref"]; isRef {
+		t.Error("unique input schema was pooled; it must stay inline")
+	}
+
+	if orig := findSchemaChild(tree, "create").OutputSchema; orig["$ref"] != nil || tree.Defs != nil {
+		t.Error("PoolShapes mutated its receiver; it must return a copy")
+	}
+}
+
+// TestCommand_PoolShapes_skips pins the two deliberate non-pooling cases:
+// a repeated body too small to pay for its references and $defs entry, and
+// a repeated body carrying a document-relative reference of its own, whose
+// internal pointer would change meaning if hoisted.
+func TestCommand_PoolShapes_skips(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name string
+		body map[string]any
+	}{
+		{name: "tiny body stays inline", body: map[string]any{"type": "string"}},
+		{name: "doc-relative ref stays inline", body: map[string]any{
+			"type":     "object",
+			"required": []any{"node"},
+			"properties": map[string]any{
+				"node": map[string]any{"$ref": "#/properties/node"},
+				"pad":  map[string]any{"type": "string", "description": "big enough to pool"},
+			},
+		}},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			tree := buildSchemaTestTree()
+			findSchemaChild(tree, "create").OutputSchema = tc.body
+			findSchemaChild(tree, "list").OutputSchema = tc.body
+
+			pooled := tree.PoolShapes()
+
+			if pooled.Defs != nil {
+				t.Errorf("Defs = %v, want nil (nothing pooled)", pooled.Defs)
+			}
+
+			if got := findSchemaChild(pooled, "create").OutputSchema; got["$ref"] != nil {
+				t.Errorf("output schema = %v, want the body inline", got)
+			}
+		})
+	}
+}
+
 // assertShapeMarkers fails the test unless c carries no embedded schema
 // bodies and exactly the expected has_* markers.
 func assertShapeMarkers(t *testing.T, c docent.Command, wantIn, wantOut bool) {

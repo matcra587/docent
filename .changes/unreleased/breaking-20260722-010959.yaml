@@ -1,0 +1,3 @@
+kind: breaking
+body: 'Pool repeated schema bodies in shape-embedding emissions: agent schema --shapes and --path hoist a body registered on multiple commands into a root $defs map and replace each occurrence with {"$ref": "#/$defs/<name>"}; Command gains a Defs field and a PoolShapes method.'
+time: 2026-07-22T01:09:59.920547723-04:00

@@ -346,7 +346,9 @@ has_output_schema markers, and --shapes embeds the bodies instead. With
 --path only the subtree rooted at that command is emitted — schema bodies
 always embedded — using the space-separated path form; the root command's
 name may be included or omitted ("issue create" and "app issue create"
-are equivalent).`,
+are equivalent). In shape-embedding output, bodies repeated across the
+emitted tree are pooled into a root "$defs" map and referenced via
+{"$ref": "#/$defs/<name>"}.`,
 		Example: `  # The full command tree (shape markers, no embedded bodies)
   app agent schema
 
@@ -361,7 +363,8 @@ are equivalent).`,
 		RunE: func(cmd *gocobra.Command, _ []string) error {
 			tree := cfg.Command
 
-			if path != "" {
+			switch {
+			case path != "":
 				found, ok := docent.FindByPath(tree, path)
 				if !ok {
 					// Command.Path is root-inclusive ("app issue create"),
@@ -377,8 +380,13 @@ are equivalent).`,
 					return fmt.Errorf("%w: %q", docent.ErrCommandNotFound, path)
 				}
 
-				tree = found
-			} else if !shapes {
+				// Shape-embedding emissions pool bodies repeated across
+				// the emitted tree into a root $defs map — real hosts
+				// register one result shell on many sibling commands.
+				tree = found.PoolShapes()
+			case shapes:
+				tree = tree.PoolShapes()
+			default:
 				// Full-tree emission policy (Agent Guide Standard §3):
 				// structure by default, shapes on demand. A whole-tree
 				// reader is routing; the embedded bodies dominate a real
@@ -413,7 +421,7 @@ are equivalent).`,
 
 	cmd.Flags().StringVar(&path, "path", "", `Subset the schema to the named command subtree (e.g. "issue create").`)
 	cmd.Flags().BoolVar(&shapes, "shapes", false,
-		`Embed input/output schema bodies in the full tree instead of has_* markers.`)
+		`Embed input/output schema bodies in the full tree instead of has_* markers (for goldens, docs generation, and offline capture — runtime consumers use --path).`)
 
 	// A --path subtree always embeds its schema bodies, so combining the two
 	// would make --shapes a silent no-op — and agents must be able to trust

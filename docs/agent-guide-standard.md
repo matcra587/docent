@@ -126,6 +126,20 @@ omitted, so its presence always means "a shape exists — ask for it".
 embeds them tree-wide (for offline capture); `--path` with `--shapes` is
 an error, since a subtree already embeds and a silently ineffective flag
 would break an agent's trust that every flag it passes has an effect.
+Shape-embedding emissions pool: a body repeated across the emitted tree
+is hoisted once into a `$defs` map on the emitted root and each
+occurrence replaced by `{"$ref": "#/$defs/<name>"}`, resolved against the
+emission document — hosts register one result shell on many sibling
+commands, and emitting it once is where the embedded-shape cost goes.
+Bodies too small to pay for the reference, or carrying document-relative
+references of their own, stay inline.
+
+The three forms divide by consumer: the default tree is live routing,
+`--path` is live payload building, and `--shapes` is archival and
+tooling — CI goldens and contract diffing, docs generation, offline
+consumers that cache the whole contract once, and the migration escape
+hatch for anything that piped the old full-tree output. An agent at
+runtime should never need `--shapes`.
 The rationale: an agent reading the whole tree is routing, while an agent
 about to build a payload asks for one command — and on real hosts the
 embedded bodies, heavily duplicated across sibling commands, dominate the

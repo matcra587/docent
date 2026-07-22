@@ -250,11 +250,14 @@ func buildHostSchemaRegistry() docent.SchemaRegistry {
 		"properties": map[string]any{"fields": map[string]any{"type": "object"}},
 	}
 
+	// Identical to issueCreateOutput by design: real hosts register one
+	// result shell on many sibling commands, and the shape-embedding
+	// emissions must pool the repeat into $defs rather than inline it twice.
 	issueEditOutput := map[string]any{
 		"type":     "object",
-		"required": []any{"issue", "dry_run"},
+		"required": []any{"dry_run"},
 		"properties": map[string]any{
-			"issue":   map[string]any{"type": "string"},
+			"issue":   map[string]any{"type": "object"},
 			"dry_run": map[string]any{"type": "boolean"},
 		},
 	}
@@ -409,6 +412,43 @@ func TestHostContract_shapesFlagEmbedsBodies(t *testing.T) {
 	}
 }
 
+// TestHostContract_shapesPoolDuplicates pins $defs pooling in the
+// shape-embedding emission: the output shell registered on both issue
+// create and issue edit is hoisted once into the root $defs map, both
+// commands reference it, and the unique input schemas stay inline.
+func TestHostContract_shapesPoolDuplicates(t *testing.T) {
+	t.Parallel()
+
+	out, err := executeAgent(shapePolicyConfig(), nil, "agent", "schema", "--shapes")
+	if err != nil {
+		t.Fatalf("agent schema --shapes: %v", err)
+	}
+
+	var got docent.Command
+	if err := json.Unmarshal(out, &got); err != nil {
+		t.Fatalf("unmarshal: %v\nraw: %s", err, out)
+	}
+
+	if len(got.Defs) != 1 {
+		t.Fatalf("root $defs = %v, want exactly the one shared output shell", got.Defs)
+	}
+
+	if _, ok := got.Defs["d1"].(map[string]any); !ok {
+		t.Fatalf(`root $defs lacks the "d1" schema object: %v`, got.Defs)
+	}
+
+	for _, path := range []string{"host issue create", "host issue edit"} {
+		cmd := findEmittedCommand(t, out, path)
+		if len(cmd.OutputSchema) != 1 || cmd.OutputSchema["$ref"] != "#/$defs/d1" {
+			t.Errorf(`%s output schema = %v, want {"$ref": "#/$defs/d1"}`, path, cmd.OutputSchema)
+		}
+
+		if _, isRef := cmd.InputSchema["$ref"]; isRef {
+			t.Errorf("%s input schema was pooled; a unique body must stay inline", path)
+		}
+	}
+}
+
 // TestHostContract_pathEmbedsBodies pins the shapes-on-demand side: a
 // --path subtree always embeds its schema bodies, and combining --path
 // with --shapes is an error rather than a silent no-op.
@@ -432,35 +472,34 @@ func TestHostContract_pathEmbedsBodies(t *testing.T) {
 	}
 }
 
-// TestHostContract_determinism verifies that running the adapter twice on the
-// same tree produces byte-identical JSON. Map-order bugs and sort instability
-// would surface here.
+// TestHostContract_determinism verifies that running each schema emission
+// form twice on the same tree produces byte-identical JSON. Map-order bugs
+// and sort instability would surface here — the pooled --shapes form walks
+// a stats map and must stay byte-stable regardless of iteration order.
 func TestHostContract_determinism(t *testing.T) {
 	t.Parallel()
 
 	root := buildHostFaithfulTree()
 	reg := buildHostSchemaRegistry()
 
-	first, err := executeAgent(
-		docent.Config{Command: reg.Apply(docentcobra.Tree(root))},
-		nil,
-		"agent", "schema",
-	)
-	if err != nil {
-		t.Fatalf("first run: %v", err)
-	}
+	for _, args := range [][]string{
+		{"agent", "schema"},
+		{"agent", "schema", "--shapes"},
+		{"agent", "schema", "--path", "host issue"},
+	} {
+		first, err := executeAgent(docent.Config{Command: reg.Apply(docentcobra.Tree(root))}, nil, args...)
+		if err != nil {
+			t.Fatalf("%v first run: %v", args, err)
+		}
 
-	second, err := executeAgent(
-		docent.Config{Command: reg.Apply(docentcobra.Tree(root))},
-		nil,
-		"agent", "schema",
-	)
-	if err != nil {
-		t.Fatalf("second run: %v", err)
-	}
+		second, err := executeAgent(docent.Config{Command: reg.Apply(docentcobra.Tree(root))}, nil, args...)
+		if err != nil {
+			t.Fatalf("%v second run: %v", args, err)
+		}
 
-	if !bytes.Equal(first, second) {
-		t.Errorf("agent schema is not deterministic:\nfirst:\n%s\nsecond:\n%s", first, second)
+		if !bytes.Equal(first, second) {
+			t.Errorf("%v is not deterministic:\nfirst:\n%s\nsecond:\n%s", args, first, second)
+		}
 	}
 }
 
