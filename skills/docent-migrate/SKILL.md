@@ -68,6 +68,12 @@ tree.Extensions = map[string]any{
 }
 ```
 
+One top-level key does NOT go into extensions: a hand-rolled
+`contract_version` (or schema-version) field moves to
+`Config.ContractVersion`, which adapters stamp onto both the schema root
+and the guide index — an `extensions` entry of that name would be silently
+overwritten by the stamp.
+
 Enums declared through gechr/clib extras surface automatically; other flag
 libraries need `docent.enum` annotations or an `Enum()` method.
 

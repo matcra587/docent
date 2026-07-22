@@ -83,6 +83,10 @@ Conventions that save rework later:
     fields, Recover the fixed exit codes.
 *   `description` + `when_to_use` compose into the exported skill
     description and must fit 1024 characters; front-load trigger words.
+*   Index-emitted fields (`title`, `description`, `when_to_use`, each
+    `commands:`/`aliases:` entry) must be single-line — no YAML block
+    scalars — and guide content may not contain form-feed characters;
+    both fail validation at load.
 
 ## Step 3 — Mount the surface
 
@@ -104,6 +108,11 @@ tree.Extensions = map[string]any{ // host contract metadata, host-owned
 cfg := docent.Config{Guides: guides, Command: tree}
 root.AddCommand(docentcobra.NewCommand(cfg))
 ```
+
+A host with its own agent-contract version sets `Config.ContractVersion`;
+adapters stamp it onto the schema root and the guide index so agents can
+pin behavior. Keep it a single line with no colons — emission fails loudly
+otherwise.
 
 Optionally add the human door — same guide set, byte-identical output,
 host-owned styling (see the `_examples/glamour-host` dispatch:
@@ -130,8 +139,15 @@ for c := cmd; c != nil; c = c.Parent() {
 
 ## Step 5 — Verify
 
-*   Self-host the contract: `docenttest.Validate(t, guidesFS, tree)` in
-    your CI — every guide violation class fails distinctly.
+*   Self-host the contract in your CI — every guide violation class fails
+    distinctly. Pass the `guides/`-rooted view, not the raw embed FS (which
+    is rooted one level up and would validate zero files):
+
+    ```go
+    sub, _ := fs.Sub(guidesFS, "guides")
+    docenttest.Validate(t, sub, tree)
+    ```
+
 *   Pin the schema: `docenttest.SchemaGolden(t, tree, "testdata/schema.json",
     *update)`; mask startup-computed defaults (ephemeral ports, home paths)
     with `docenttest.MaskFlagDefaults` or the pin flakes.
