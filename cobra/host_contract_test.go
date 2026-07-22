@@ -296,6 +296,142 @@ func TestHostContract_agentSchemaGolden(t *testing.T) {
 	checkHostGolden(t, "host_agent_schema", string(out))
 }
 
+// TestHostContract_agentSchemaShapesGolden pins the --shapes emission: the
+// full tree with every registered input/output schema body embedded — the
+// pre-policy whole-tree shape, kept behind an explicit flag for offline
+// capture.
+func TestHostContract_agentSchemaShapesGolden(t *testing.T) {
+	t.Parallel()
+
+	root := buildHostFaithfulTree()
+	reg := buildHostSchemaRegistry()
+	cfg := docent.Config{Command: reg.Apply(docentcobra.Tree(root))}
+
+	out, err := executeAgent(cfg, nil, "agent", "schema", "--shapes")
+	if err != nil {
+		t.Fatalf("agent schema --shapes: %v", err)
+	}
+
+	checkHostGolden(t, "host_agent_schema_shapes", string(out))
+}
+
+// TestHostContract_agentSchemaPathGolden pins the --path emission: one
+// subtree with its schema bodies embedded — the shapes-on-demand side of
+// the emission policy.
+func TestHostContract_agentSchemaPathGolden(t *testing.T) {
+	t.Parallel()
+
+	root := buildHostFaithfulTree()
+	reg := buildHostSchemaRegistry()
+	cfg := docent.Config{Command: reg.Apply(docentcobra.Tree(root))}
+
+	out, err := executeAgent(cfg, nil, "agent", "schema", "--path", "host issue create")
+	if err != nil {
+		t.Fatalf("agent schema --path: %v", err)
+	}
+
+	checkHostGolden(t, "host_agent_schema_path", string(out))
+}
+
+// shapePolicyConfig builds the enriched host config the shape-emission
+// tests share.
+func shapePolicyConfig() docent.Config {
+	root := buildHostFaithfulTree()
+	reg := buildHostSchemaRegistry()
+
+	return docent.Config{Command: reg.Apply(docentcobra.Tree(root))}
+}
+
+// findEmittedCommand unmarshals a schema emission and returns the node at
+// path, failing the test when the emission does not parse or lacks it.
+func findEmittedCommand(t *testing.T, out []byte, path string) docent.Command {
+	t.Helper()
+
+	var got docent.Command
+	if err := json.Unmarshal(out, &got); err != nil {
+		t.Fatalf("unmarshal: %v\nraw: %s", err, out)
+	}
+
+	cmd, ok := docent.FindByPath(got, path)
+	if !ok {
+		t.Fatalf("command %q not found in emission", path)
+	}
+
+	return cmd
+}
+
+// TestHostContract_shapeMarkersFullTree pins the structure-by-default side
+// of the emission policy: the full tree replaces every registered schema
+// body with a has_* marker, and a marker appears only where a body was
+// omitted.
+func TestHostContract_shapeMarkersFullTree(t *testing.T) {
+	t.Parallel()
+
+	out, err := executeAgent(shapePolicyConfig(), nil, "agent", "schema")
+	if err != nil {
+		t.Fatalf("agent schema: %v", err)
+	}
+
+	create := findEmittedCommand(t, out, "host issue create")
+	if create.InputSchema != nil || create.OutputSchema != nil {
+		t.Error("full-tree emission embeds schema bodies; they must be stripped to markers")
+	}
+
+	if !create.HasInputSchema || !create.HasOutputSchema {
+		t.Error("full-tree emission lacks has_* markers for a command with registered schemas")
+	}
+
+	// issue list registers an output schema only: exactly one marker.
+	list := findEmittedCommand(t, out, "host issue list")
+	if list.HasInputSchema || !list.HasOutputSchema {
+		t.Errorf("host issue list markers = input:%v output:%v; want output only",
+			list.HasInputSchema, list.HasOutputSchema)
+	}
+}
+
+// TestHostContract_shapesFlagEmbedsBodies pins the --shapes escape hatch:
+// the full tree with every schema body embedded and no markers.
+func TestHostContract_shapesFlagEmbedsBodies(t *testing.T) {
+	t.Parallel()
+
+	out, err := executeAgent(shapePolicyConfig(), nil, "agent", "schema", "--shapes")
+	if err != nil {
+		t.Fatalf("agent schema --shapes: %v", err)
+	}
+
+	create := findEmittedCommand(t, out, "host issue create")
+	if create.InputSchema == nil || create.OutputSchema == nil {
+		t.Error("--shapes emission lacks embedded schema bodies")
+	}
+
+	if create.HasInputSchema || create.HasOutputSchema {
+		t.Error("--shapes emission carries has_* markers alongside embedded bodies")
+	}
+}
+
+// TestHostContract_pathEmbedsBodies pins the shapes-on-demand side: a
+// --path subtree always embeds its schema bodies, and combining --path
+// with --shapes is an error rather than a silent no-op.
+func TestHostContract_pathEmbedsBodies(t *testing.T) {
+	t.Parallel()
+
+	cfg := shapePolicyConfig()
+
+	out, err := executeAgent(cfg, nil, "agent", "schema", "--path", "host issue create")
+	if err != nil {
+		t.Fatalf("agent schema --path: %v", err)
+	}
+
+	create := findEmittedCommand(t, out, "host issue create")
+	if create.InputSchema == nil || create.OutputSchema == nil {
+		t.Error("--path emission lacks embedded schema bodies; a subtree always embeds")
+	}
+
+	if _, err := executeAgent(cfg, nil, "agent", "schema", "--path", "host issue create", "--shapes"); err == nil {
+		t.Fatal("agent schema --path --shapes: expected mutual-exclusion error, got nil")
+	}
+}
+
 // TestHostContract_determinism verifies that running the adapter twice on the
 // same tree produces byte-identical JSON. Map-order bugs and sort instability
 // would surface here.

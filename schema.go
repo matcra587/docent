@@ -61,9 +61,19 @@ type Command struct {
 	// structured input. Nil when the framework does not supply schema metadata.
 	InputSchema map[string]any `json:"input_schema,omitempty"`
 
+	// HasInputSchema marks that an input schema exists for this command
+	// when the embedded body has been omitted from the emission. Set by
+	// StripShapes, never by adapters or hosts directly: a full-tree reader
+	// is routing and needs only the fact that a shape exists; the body is
+	// one --path call away.
+	HasInputSchema bool `json:"has_input_schema,omitempty"`
+
 	// OutputSchema is an optional JSON Schema object describing the command's
 	// structured output. Nil when the framework does not supply schema metadata.
 	OutputSchema map[string]any `json:"output_schema,omitempty"`
+
+	// HasOutputSchema is the output-side counterpart of HasInputSchema.
+	HasOutputSchema bool `json:"has_output_schema,omitempty"`
 
 	// Children contains this command's direct subcommands, sorted by Name.
 	Children []Command `json:"children,omitempty"`
@@ -97,6 +107,41 @@ func MarshalSchema(cmd Command) ([]byte, error) {
 // version) clone first so the original tree is never mutated.
 func (c Command) Clone() Command {
 	return applyRegistry(nil, c)
+}
+
+// StripShapes returns a deep copy of c in which every embedded input and
+// output schema body — on c and every descendant — is replaced by its
+// marker: a node carrying an InputSchema comes back with HasInputSchema
+// true and InputSchema nil, likewise for the output side. Nodes without a
+// schema are untouched, so a marker always means "a shape exists and was
+// omitted". This is the standard's full-tree emission policy: an agent
+// reading the whole tree is routing, and the embedded shapes — the
+// dominant share of a real host's schema bytes, heavily duplicated across
+// sibling commands — are one --path call away when it is time to build a
+// payload. c itself is never modified.
+func (c Command) StripShapes() Command {
+	out := c.Clone()
+	stripShapes(&out)
+
+	return out
+}
+
+// stripShapes rewrites schema bodies to markers in place, recursing through
+// children. The caller owns the copy being rewritten.
+func stripShapes(cmd *Command) {
+	if cmd.InputSchema != nil {
+		cmd.InputSchema = nil
+		cmd.HasInputSchema = true
+	}
+
+	if cmd.OutputSchema != nil {
+		cmd.OutputSchema = nil
+		cmd.HasOutputSchema = true
+	}
+
+	for i := range cmd.Children {
+		stripShapes(&cmd.Children[i])
+	}
 }
 
 // Flag is a framework-neutral flag definition. Default holds the value exactly

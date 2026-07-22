@@ -113,8 +113,23 @@ Rules:
 | `<tool> agent guide`            | List all guides: frontmatter index, no bodies.                  |
 | `<tool> agent guide <slug>`     | Print one guide; `--section <name>` prints one section.         |
 | `<tool> agent guide --all`      | Every guide concatenated in canonical order, form-feed separated. |
-| `<tool> agent schema`           | Runtime-derived contract; `--path <cmd>` subsets one subtree.   |
+| `<tool> agent schema`           | Runtime-derived contract, structure only (shape markers); `--path <cmd>` subsets one subtree with schema bodies embedded; `--shapes` embeds them tree-wide. |
 | `<tool> agent export --dir <dir> --format <fmt> \| --scope <scope> [--format <fmt>]` | Materialize guides for a harness (§6). |
+
+The schema command emits structure by default and shapes on demand. The
+full tree carries every command, flag, group, and extension, but a
+registered input or output schema body is omitted and replaced by a marker
+on the command that has one: `"has_input_schema": true` /
+`"has_output_schema": true`. A marker MUST appear only where a body was
+omitted, so its presence always means "a shape exists — ask for it".
+`--path <cmd>` always embeds the subtree's schema bodies, and `--shapes`
+embeds them tree-wide (for offline capture); `--path` with `--shapes` is
+an error, since a subtree already embeds and a silently ineffective flag
+would break an agent's trust that every flag it passes has an effect.
+The rationale: an agent reading the whole tree is routing, while an agent
+about to build a payload asks for one command — and on real hosts the
+embedded bodies, heavily duplicated across sibling commands, dominate the
+full tree's token cost.
 
 Output encoding (JSON envelopes, re-rendering) is the host's contract, not
 this standard's — the standard fixes *what* is retrievable, hosts fix *how*

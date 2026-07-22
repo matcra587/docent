@@ -638,6 +638,57 @@ func TestSchemaRegistry_determinism(t *testing.T) {
 	}
 }
 
+// TestCommand_StripShapes pins the full-tree emission policy primitive:
+// embedded schema bodies are replaced by has_* markers wherever they exist
+// in the tree, nodes without a schema stay unmarked, the source tree is
+// never mutated, and the markers serialize under their documented JSON
+// keys.
+func TestCommand_StripShapes(t *testing.T) {
+	t.Parallel()
+
+	tree := buildSchemaTestTree()
+	create := findSchemaChild(tree, "create")
+	create.InputSchema = map[string]any{"type": "object"}
+	create.OutputSchema = map[string]any{"type": "array"}
+	tree.OutputSchema = map[string]any{"type": "object"}
+
+	stripped := tree.StripShapes()
+
+	assertShapeMarkers(t, stripped, false, true)
+	assertShapeMarkers(t, *findSchemaChild(stripped, "create"), true, true)
+	assertShapeMarkers(t, *findSchemaChild(stripped, "list"), false, false)
+
+	if tree.OutputSchema == nil || findSchemaChild(tree, "create").InputSchema == nil {
+		t.Error("StripShapes mutated its receiver; it must return a copy")
+	}
+
+	data, err := docent.MarshalSchema(*findSchemaChild(stripped, "create"))
+	if err != nil {
+		t.Fatalf("MarshalSchema: %v", err)
+	}
+
+	for _, marker := range []string{`"has_input_schema":true`, `"has_output_schema":true`} {
+		if !strings.Contains(string(data), marker) {
+			t.Errorf("emission %s lacks marker %s", data, marker)
+		}
+	}
+}
+
+// assertShapeMarkers fails the test unless c carries no embedded schema
+// bodies and exactly the expected has_* markers.
+func assertShapeMarkers(t *testing.T, c docent.Command, wantIn, wantOut bool) {
+	t.Helper()
+
+	if c.InputSchema != nil || c.OutputSchema != nil {
+		t.Errorf("%s still embeds a schema body after StripShapes", c.Path)
+	}
+
+	if c.HasInputSchema != wantIn || c.HasOutputSchema != wantOut {
+		t.Errorf("%s markers = input:%v output:%v; want input:%v output:%v",
+			c.Path, c.HasInputSchema, c.HasOutputSchema, wantIn, wantOut)
+	}
+}
+
 // TestMarshalSchema pins the canonical emission shape — compact, single
 // line, no trailing newline — and the wrapped error for a tree carrying a
 // non-marshalable extension value.

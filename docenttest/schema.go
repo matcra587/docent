@@ -12,11 +12,14 @@ import (
 // the golden file at goldenPath, writing the file instead when update is
 // true. The emission goes through [docent.MarshalSchema] — the same function
 // the adapter's "agent schema" command writes through — so the golden pins
-// the artifact agents actually read, not a lookalike. Two adapter effects
+// the artifact agents actually read, not a lookalike. Three adapter effects
 // sit on top of the canonical shape and are not covered here: the
-// contract-version stamp (Config.ContractVersion) and host schema
-// transforms. Hosts relying on either effect should golden the schema
-// command's output itself.
+// contract-version stamp (Config.ContractVersion), the full-tree
+// structure-only emission (docent.Command.StripShapes replaces embedded
+// schema bodies with has_* markers unless --shapes or --path is used), and
+// host schema transforms. Hosts relying on any of these effects should
+// golden the schema command's output itself — or golden the stripped tree
+// by passing cmd.StripShapes() here.
 //
 // Hosts whose trees carry volatile flag defaults (ephemeral ports, home-dir
 // paths, timestamps) golden a masked copy via MaskFlagDefaults first;

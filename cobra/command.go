@@ -325,23 +325,34 @@ func runGuideAll(cmd *gocobra.Command, cfg docent.Config, gs *docent.GuideSet) e
 }
 
 // agentSchemaCmd creates the "agent schema" subcommand. It emits the
-// framework-neutral command schema as JSON. When --path is given the output is
-// scoped to the subtree rooted at that path; an unknown path is an error.
+// framework-neutral command schema as JSON: the full tree carries structure
+// only — embedded input/output schema bodies are replaced by has_* markers
+// unless --shapes is passed — while --path scopes the output to one subtree
+// with its schema bodies embedded; an unknown path is an error.
 func agentSchemaCmd(cfg docent.Config, transforms []SchemaTransform) *gocobra.Command {
-	var path string
+	var (
+		path   string
+		shapes bool
+	)
 
 	cmd := &gocobra.Command{
 		Use:   "schema",
 		Short: "Emit the command schema as JSON.",
 		Long: `Emit the host's framework-neutral command schema as JSON.
 
-Without --path the full tree is emitted. With --path only the subtree rooted
-at that command is emitted, using the space-separated path form (e.g. "issue create").`,
-		Example: `  # The full command tree
+Without --path the full tree is emitted with structure only: embedded
+input/output schema bodies are replaced by has_input_schema /
+has_output_schema markers, and --shapes embeds the bodies instead. With
+--path only the subtree rooted at that command is emitted — schema bodies
+always embedded — using the space-separated path form (e.g. "issue create").`,
+		Example: `  # The full command tree (shape markers, no embedded bodies)
   app agent schema
 
-  # One command's subtree only
-  app agent schema --path "issue create"`,
+  # One command's subtree, schema bodies embedded
+  app agent schema --path "issue create"
+
+  # The full tree with every schema body embedded
+  app agent schema --shapes`,
 		Args: gocobra.NoArgs,
 		// See agentGuideCmd: runtime errors return the error line alone.
 		SilenceUsage: true,
@@ -355,6 +366,12 @@ at that command is emitted, using the space-separated path form (e.g. "issue cre
 				}
 
 				tree = found
+			} else if !shapes {
+				// Full-tree emission policy (Agent Guide Standard §3):
+				// structure by default, shapes on demand. A whole-tree
+				// reader is routing; the embedded bodies dominate a real
+				// host's schema bytes and are one --path call away.
+				tree = tree.StripShapes()
 			}
 
 			tree = stampContractVersion(tree, cfg.ContractVersion)
@@ -383,6 +400,13 @@ at that command is emitted, using the space-separated path form (e.g. "issue cre
 	}
 
 	cmd.Flags().StringVar(&path, "path", "", `Subset the schema to the named command subtree (e.g. "issue create").`)
+	cmd.Flags().BoolVar(&shapes, "shapes", false,
+		`Embed input/output schema bodies in the full tree instead of has_* markers.`)
+
+	// A --path subtree always embeds its schema bodies, so combining the two
+	// would make --shapes a silent no-op — and agents must be able to trust
+	// that every flag they pass had an effect.
+	cmd.MarkFlagsMutuallyExclusive("path", "shapes")
 
 	mustRegisterCompletion(cmd, "path", func() []string { return commandPaths(cfg.Command) })
 
