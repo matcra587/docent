@@ -145,7 +145,10 @@ single non-blank line containing no colon — it is emitted verbatim into the
 index's line-oriented `key: value` shape, and a conformant implementation
 MUST refuse to emit an index with a value that would corrupt that shape.
 Adapters MAY also contribute documented, namespaced per-flag extension
-entries derived from the host's flag library.
+entries derived from the host's flag library. Adapter-contributed entries
+are emitted sparse: zero-valued fields (empty strings, false, null, empty
+collections) are omitted rather than serialized — an absent key carries
+the same information at no token cost.
 
 The recommended shape for the single-guide view (`agent guide <slug>`) is
 the reading-oriented runbook: the title as an H1 heading followed by the six

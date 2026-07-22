@@ -250,14 +250,58 @@ func convertFlag(f *pflag.Flag, persistent bool) docent.Flag {
 	// Everything else in the blob — placeholder, value hints, display
 	// grouping — has no neutral IR field; surface it under the documented
 	// "clib" namespace so clib hosts lose nothing. The enum key is dropped:
-	// it is modeled above and duplicating it would let the two drift.
+	// it is modeled above and duplicating it would let the two drift. Zero
+	// values are dropped too — clib serializes every extras field on every
+	// flag, and across hundreds of flags those empty fields dominated the
+	// schema's extension bytes on a real host.
 	delete(extras, "enum")
 
-	if len(extras) > 0 {
-		fl.Extensions = map[string]any{"clib": extras}
+	if thinned := thinZeroValues(extras); len(thinned) > 0 {
+		fl.Extensions = map[string]any{"clib": thinned}
 	}
 
 	return fl
+}
+
+// thinZeroValues returns extras with zero-valued entries removed — empty
+// strings, false, nil, and empty collections — recursing into nested
+// objects. An absent key says everything an empty one does, and the schema
+// is an agent artifact where every key is repeated token cost. Numbers
+// survive even at zero: 0 is a value, not an absence marker. Returns nil
+// when nothing survives so the caller drops the namespace entirely. The
+// input comes from json.Unmarshal, so only JSON-native kinds appear.
+func thinZeroValues(extras map[string]any) map[string]any {
+	out := make(map[string]any, len(extras))
+
+	for key, value := range extras {
+		switch v := value.(type) {
+		case nil:
+		case string:
+			if v != "" {
+				out[key] = v
+			}
+		case bool:
+			if v {
+				out[key] = v
+			}
+		case []any:
+			if len(v) > 0 {
+				out[key] = v
+			}
+		case map[string]any:
+			if thinned := thinZeroValues(v); len(thinned) > 0 {
+				out[key] = thinned
+			}
+		default:
+			out[key] = v
+		}
+	}
+
+	if len(out) == 0 {
+		return nil
+	}
+
+	return out
 }
 
 // clibExtras parses the clib extras annotation into a map. The value is one

@@ -73,10 +73,20 @@ func buildTestTree() *gocobra.Command {
 	create.MarkFlagsOneRequired("json", "yaml")
 
 	// --level: enum declared via the clib extras annotation (the JSON blob
-	// gechr/clib's Extend writes), read by the adapter without importing clib.
+	// gechr/clib's Extend writes), read by the adapter without importing
+	// clib. The blob carries the zero-valued fields clib serializes on
+	// every flag — they must be thinned away, never surfaced.
 	create.Flags().String("level", "info", "Log level.")
 	if err := create.Flags().SetAnnotation("level", "clib.extra",
-		[]string{`{"enum":["warn","info","debug"],"placeholder":"level"}`}); err != nil {
+		[]string{`{"enum":["warn","info","debug"],"placeholder":"level","terse":"","hideLong":false,"aliases":null,"group":{"name":"","order":0}}`}); err != nil {
+		panic(err)
+	}
+
+	// --sparse: a clib extras blob that is entirely zero values must yield
+	// no extensions at all — an empty namespace is pure token cost.
+	create.Flags().String("sparse", "", "Flag with an all-zero clib extras blob.")
+	if err := create.Flags().SetAnnotation("sparse", "clib.extra",
+		[]string{`{"terse":"","hideLong":false,"aliases":null,"tags":[]}`}); err != nil {
 		panic(err)
 	}
 
@@ -416,6 +426,62 @@ func TestTree_clibEnumBridge(t *testing.T) {
 
 	if brokenFlag.Extensions != nil {
 		t.Errorf("--broken Extensions = %v, want nil for a malformed extras blob", brokenFlag.Extensions)
+	}
+}
+
+// TestTree_clibZeroValuesThinned pins sparse extension emission: zero-valued
+// clib blob fields (empty strings, false, null, empty collections) are
+// omitted rather than serialized — an absent key says everything an empty
+// one does, and the schema is an agent artifact where every key is repeated
+// token cost. Nested objects thin recursively, zero numbers survive (0 is a
+// value, not an absence marker), and an all-zero blob yields no extensions
+// namespace at all.
+func TestTree_clibZeroValuesThinned(t *testing.T) {
+	t.Parallel()
+
+	cmd := docentcobra.Tree(buildTestTree())
+	create := findChild(namedChildren(cmd, "create"), "create")
+
+	if create == nil {
+		t.Fatal("create command not found")
+	}
+
+	levelFlag := findFlag(create.Flags, "level")
+	if levelFlag == nil {
+		t.Fatal("flag --level not found on create")
+	}
+
+	clib, ok := levelFlag.Extensions["clib"].(map[string]any)
+	if !ok {
+		t.Fatalf("--level Extensions = %v, want a clib namespace map", levelFlag.Extensions)
+	}
+
+	for _, key := range []string{"terse", "hideLong", "aliases"} {
+		if _, present := clib[key]; present {
+			t.Errorf("clib extensions carry zero-valued key %q; it must be omitted", key)
+		}
+	}
+
+	group, ok := clib["group"].(map[string]any)
+	if !ok {
+		t.Fatalf("clib group = %v, want a nested map with its zero name thinned", clib["group"])
+	}
+
+	if _, present := group["name"]; present {
+		t.Error(`clib group still carries the empty "name" key`)
+	}
+
+	if got := group["order"]; got != float64(0) {
+		t.Errorf("clib group order = %v, want 0 (zero numbers are kept)", got)
+	}
+
+	sparseFlag := findFlag(create.Flags, "sparse")
+	if sparseFlag == nil {
+		t.Fatal("flag --sparse not found on create")
+	}
+
+	if sparseFlag.Extensions != nil {
+		t.Errorf("--sparse Extensions = %v, want nil for an all-zero extras blob", sparseFlag.Extensions)
 	}
 }
 
