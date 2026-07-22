@@ -116,9 +116,14 @@ Rules:
 | `<tool> agent schema`           | Runtime-derived contract; `--path <cmd>` subsets one subtree.   |
 | `<tool> agent export --dir <dir> --format <fmt> \| --scope <scope> [--format <fmt>]` | Materialize guides for a harness (§6). |
 
-Output encoding (JSON envelopes, compact modes) is the host's contract, not
+Output encoding (JSON envelopes, re-rendering) is the host's contract, not
 this standard's — the standard fixes *what* is retrievable, hosts fix *how*
-it is rendered.
+it is rendered. Two emission properties are normative regardless of
+encoding: output MUST be deterministic and byte-stable across runs, and the
+schema is a machine-facing artifact, so the reference implementation emits
+it as compact JSON (no insignificant whitespace, one trailing newline) —
+indentation in an agent-facing artifact is pure token cost. A host that
+wants a human-readable view re-renders on its side.
 
 The agent surface MUST work without credentials: discovery precedes auth by
 definition, and an agent bootstrapping on a fresh machine has nothing but

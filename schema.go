@@ -69,18 +69,21 @@ type Command struct {
 	Children []Command `json:"children,omitempty"`
 }
 
-// MarshalSchema renders cmd as the canonical schema JSON emission:
-// two-space indented, no trailing newline, matching the stdlib Marshal
-// convention. It is the single source for the byte shape of the "agent
+// MarshalSchema renders cmd as the canonical schema JSON emission: compact
+// (no insignificant whitespace), single line, no trailing newline. The
+// schema is a machine-facing artifact read by agents whose context windows
+// bill per token, so indentation is pure cost; a host that wants a readable
+// view pipes through a JSON formatter or registers a schema transform.
+// MarshalSchema is the single source for the byte shape of the "agent
 // schema" surface — the cobra adapter's schema command and
 // docenttest.SchemaGolden both emit through it (each appending the
 // artifact's trailing newline at its write site), so a golden pinned with
 // one cannot drift from the bytes the other writes. The adapter may further
-// stamp a contract version and apply host schema transforms on top of this
-// shape; goldens that must pin those effects golden the command output
-// itself.
+// stamp a contract version, strip embedded shapes from the full tree, and
+// apply host schema transforms on top of this shape; goldens that must pin
+// those effects golden the command output itself.
 func MarshalSchema(cmd Command) ([]byte, error) {
-	data, err := json.MarshalIndent(cmd, "", "  ")
+	data, err := json.Marshal(cmd)
 	if err != nil {
 		return nil, fmt.Errorf("docent: marshal schema: %w", err)
 	}

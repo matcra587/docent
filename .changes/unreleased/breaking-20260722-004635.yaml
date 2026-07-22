@@ -1,0 +1,3 @@
+kind: breaking
+body: 'Emit schema JSON compact: MarshalSchema, the agent schema command, and docenttest.SchemaGolden now produce single-line JSON with no insignificant whitespace. Re-golden pinned schemas on upgrade and delete host-side compaction transforms.'
+time: 2026-07-22T00:46:35.093149268-04:00

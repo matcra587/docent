@@ -638,8 +638,8 @@ func TestSchemaRegistry_determinism(t *testing.T) {
 	}
 }
 
-// TestMarshalSchema pins the canonical emission shape — two-space indent,
-// no trailing newline — and the wrapped error for a tree carrying a
+// TestMarshalSchema pins the canonical emission shape — compact, single
+// line, no trailing newline — and the wrapped error for a tree carrying a
 // non-marshalable extension value.
 func TestMarshalSchema(t *testing.T) {
 	t.Parallel()
@@ -649,7 +649,7 @@ func TestMarshalSchema(t *testing.T) {
 		t.Fatalf("MarshalSchema: %v", err)
 	}
 
-	if want := "{\n  \"name\": \"app\",\n  \"path\": \"app\"\n}"; string(data) != want {
+	if want := `{"name":"app","path":"app"}`; string(data) != want {
 		t.Errorf("MarshalSchema = %q, want %q", data, want)
 	}
 
