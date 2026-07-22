@@ -1,3 +1,0 @@
-kind: added
-body: Add `Harness.SkillsPath` resolving a scope's skills directory, making the scope-to-root mapping a harness-owned contract
-time: 2026-07-21T21:47:18.327367788-04:00

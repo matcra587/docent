@@ -1,3 +1,0 @@
-kind: changed
-body: '`harness.DetectAgent` now canonicalizes version-qualified runtime identifiers ("claude-code_2-1-211_agent" returns "claude-code"), so every consumer of the name sees the same spelling'
-time: 2026-07-21T21:47:20.53677267-04:00

@@ -1,3 +1,0 @@
-kind: added
-body: Add error sentinels `export.ErrInvalidContractVersion`, `export.ErrPathEscape`, and `harness.ErrUnsupportedScope` plus `harness.ValidateScope`, so hosts branch on failure classes with errors.Is instead of matching message text
-time: 2026-07-21T22:05:55.690069608-04:00

@@ -1,3 +1,0 @@
-kind: added
-body: Add `MarshalSchema` as the single canonical schema JSON emission, shared by the cobra adapter's schema command and `docenttest.SchemaGolden` so goldens cannot drift from the emitted artifact
-time: 2026-07-21T21:47:13.90443122-04:00

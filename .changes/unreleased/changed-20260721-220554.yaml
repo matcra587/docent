@@ -1,3 +1,0 @@
-kind: changed
-body: 'Guide files may no longer contain form-feed characters: LoadGuides rejects them with `ErrFormFeed`, making the form-feed guide separator in concatenated output unambiguous by construction'
-time: 2026-07-21T22:05:54.585222774-04:00
