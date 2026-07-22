@@ -1,3 +1,0 @@
-kind: breaking
-body: 'Omit zero-valued fields from the cobra adapter''s clib flag extensions: empty strings, false, null, and empty collections are no longer serialized, and an all-zero extras blob yields no extensions entry. Re-golden pinned schemas and delete host-side extension-thinning workarounds.'
-time: 2026-07-22T00:48:40.439461241-04:00

@@ -1,3 +1,0 @@
-kind: breaking
-body: 'Emit the full agent schema tree with structure only: registered input/output schema bodies are replaced by has_input_schema/has_output_schema markers. agent schema --path <cmd> keeps bodies embedded, and a new --shapes flag embeds them tree-wide; --path with --shapes is an error. Command gains HasInputSchema/HasOutputSchema fields and a StripShapes method.'
-time: 2026-07-22T00:52:52.265730925-04:00
