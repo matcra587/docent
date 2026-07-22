@@ -1,0 +1,3 @@
+kind: fixed
+body: 'Resolve the rootless form in agent schema --path: "item create" now matches the same subtree as the root-inclusive "app item create" instead of failing the lookup.'
+time: 2026-07-22T01:01:06.709714062-04:00

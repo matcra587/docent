@@ -344,7 +344,9 @@ Without --path the full tree is emitted with structure only: embedded
 input/output schema bodies are replaced by has_input_schema /
 has_output_schema markers, and --shapes embeds the bodies instead. With
 --path only the subtree rooted at that command is emitted — schema bodies
-always embedded — using the space-separated path form (e.g. "issue create").`,
+always embedded — using the space-separated path form; the root command's
+name may be included or omitted ("issue create" and "app issue create"
+are equivalent).`,
 		Example: `  # The full command tree (shape markers, no embedded bodies)
   app agent schema
 
@@ -361,6 +363,16 @@ always embedded — using the space-separated path form (e.g. "issue create").`,
 
 			if path != "" {
 				found, ok := docent.FindByPath(tree, path)
+				if !ok {
+					// Command.Path is root-inclusive ("app issue create"),
+					// but an agent naturally writes the subcommand path it
+					// sees in help ("issue create"); retry with the root
+					// name prefixed so the natural form lands instead of
+					// failing the lookup — the same philosophy as guide
+					// slug resolution.
+					found, ok = docent.FindByPath(tree, tree.Name+" "+path)
+				}
+
 				if !ok {
 					return fmt.Errorf("%w: %q", docent.ErrCommandNotFound, path)
 				}

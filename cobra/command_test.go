@@ -261,6 +261,31 @@ func TestAgentSchema_pathFlag_found(t *testing.T) {
 	}
 }
 
+// TestAgentSchema_pathFlag_rootless verifies that --path resolves the
+// rootless path form: an agent that writes the subcommand path it sees in
+// help ("create") lands on the same node as the root-inclusive form
+// ("app create") instead of a failed lookup.
+func TestAgentSchema_pathFlag_rootless(t *testing.T) {
+	t.Parallel()
+
+	_, schema := buildSchemaHost()
+	cfg := docent.Config{Command: schema}
+
+	out, err := executeAgent(cfg, nil, "agent", "schema", "--path", "create")
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	var got docent.Command
+	if err = json.Unmarshal(out, &got); err != nil {
+		t.Fatalf("unmarshal output: %v\nraw: %s", err, out)
+	}
+
+	if got.Path != "app create" {
+		t.Errorf("subtree Path = %q, want %q", got.Path, "app create")
+	}
+}
+
 // TestAgentSchema_pathFlag_found_root verifies that --path with the root
 // command's path returns the full tree (the root is its own subtree).
 func TestAgentSchema_pathFlag_found_root(t *testing.T) {
