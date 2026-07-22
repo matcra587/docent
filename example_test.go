@@ -91,3 +91,43 @@ func ExampleSectionHeadings() {
 	// Output:
 	// Decide, Run, Save, Preconditions, Recover, Next
 }
+
+// ExampleGuide_Section looks up one section case-insensitively with the
+// comma-ok idiom.
+func ExampleGuide_Section() {
+	fsys := fstest.MapFS{
+		"safe-mutation.md": &fstest.MapFile{Data: []byte(exampleGuide)},
+	}
+
+	gs, _ := docent.LoadGuides(fsys)
+	g, _ := gs.Get("safe-mutation")
+
+	s, ok := g.Section("preconditions")
+	fmt.Println(ok, s.Heading)
+
+	_, ok = g.Section("missing")
+	fmt.Println(ok)
+
+	// Output:
+	// true Preconditions
+	// false
+}
+
+// ExampleGuideSet_All iterates guides lazily in canonical order; breaking
+// out early skips the cost of copying the remaining guides.
+func ExampleGuideSet_All() {
+	fsys := fstest.MapFS{
+		"safe-mutation.md": &fstest.MapFile{Data: []byte(exampleGuide)},
+	}
+
+	gs, _ := docent.LoadGuides(fsys)
+
+	for g := range gs.All() {
+		fmt.Println(g.Slug)
+
+		break
+	}
+
+	// Output:
+	// safe-mutation
+}

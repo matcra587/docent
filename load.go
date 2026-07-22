@@ -111,6 +111,17 @@ func LoadGuides(fsys fs.FS) (*GuideSet, error) {
 func parseGuide(stem string, raw []byte) (Guide, error) {
 	filename := stem + ".md"
 
+	// The form feed is reserved as the concatenation separator
+	// (export.GuideSeparator); rejecting it here makes the separator's
+	// "cannot appear in guide content" contract true by construction.
+	if bytes.ContainsRune(raw, '\f') {
+		return Guide{}, &ValidationError{
+			File:    filename,
+			Message: "form feed character in guide content",
+			Err:     ErrFormFeed,
+		}
+	}
+
 	fmBytes, body, err := splitFrontmatter(raw)
 	if err != nil {
 		return Guide{}, &ValidationError{
@@ -279,6 +290,8 @@ func validateFields(filename string, fm frontmatter) error {
 		})
 	}
 
+	errs = append(errs, collectMultilineFieldErrors(filename, fm)...)
+
 	// The budget applies to the composed skill description an export emits;
 	// the spec counts characters, so runes, not bytes. Empty fields are
 	// already reported above; checking only non-empty pairs keeps each
@@ -311,6 +324,41 @@ func validateFields(filename string, fm frontmatter) error {
 	}
 
 	return errors.Join(errs...)
+}
+
+// collectMultilineFieldErrors reports every frontmatter value the guide
+// index emits as a single key: value line that contains a newline: YAML
+// block scalars legally carry newlines, and a multiline value would corrupt
+// — or forge entries in — the line-oriented index shape. Absent fields are
+// reported separately as missing.
+func collectMultilineFieldErrors(filename string, fm frontmatter) []error {
+	checks := []struct{ name, value string }{
+		{"title", fm.Title},
+		{"description", fm.Description},
+		{"when_to_use", fm.WhenToUse},
+	}
+
+	for _, c := range fm.Commands {
+		checks = append(checks, struct{ name, value string }{fmt.Sprintf("commands entry %q", c), c})
+	}
+
+	for _, a := range fm.Aliases {
+		checks = append(checks, struct{ name, value string }{fmt.Sprintf("aliases entry %q", a), a})
+	}
+
+	var errs []error
+
+	for _, c := range checks {
+		if strings.ContainsAny(c.value, "\n\r") {
+			errs = append(errs, &ValidationError{
+				File:    filename,
+				Message: c.name + " must be a single line",
+				Err:     ErrMultilineField,
+			})
+		}
+	}
+
+	return errs
 }
 
 // validateSlugFormat checks a non-empty slug against the Agent Skills name

@@ -3,6 +3,7 @@ package docent
 import (
 	"bytes"
 	"io"
+	"iter"
 	"maps"
 	"slices"
 	"strings"
@@ -122,6 +123,21 @@ type Guide struct {
 	Raw []byte
 }
 
+// Section returns the guide section whose heading matches name
+// case-insensitively — the lookup behind section-scoped serving surfaces
+// like the cobra adapter's --section flag, owned here so adapters cannot
+// drift in matching semantics. The second return value is false when no
+// section matches, mirroring GuideSet.Get.
+func (g Guide) Section(name string) (Section, bool) {
+	for _, s := range g.Sections {
+		if strings.EqualFold(s.Heading, name) {
+			return s, true
+		}
+	}
+
+	return Section{}, false
+}
+
 // SkillDescription returns the guide's description and when_to_use composed
 // into the single description field the Agent Skills open standard defines
 // for exported skills. It is the value the agent-skill export emits and the
@@ -161,6 +177,25 @@ func (gs *GuideSet) Guides() []Guide {
 	}
 
 	return out
+}
+
+// All returns an iterator over the guides in canonical order, yielding a
+// deep copy per guide exactly as Guides does — but lazily, so a consumer
+// that stops early never pays for copying the rest of the corpus, and no
+// second slice is retained. Prefer it over Guides when iterating; Guides
+// remains the snapshot form. A nil *GuideSet yields nothing.
+func (gs *GuideSet) All() iter.Seq[Guide] {
+	return func(yield func(Guide) bool) {
+		if gs == nil {
+			return
+		}
+
+		for _, g := range gs.guides {
+			if !yield(copyGuide(g)) {
+				return
+			}
+		}
+	}
 }
 
 // Get returns the guide with the given slug, or — when no slug matches —
@@ -298,9 +333,6 @@ func (gs *GuideSet) Len() int {
 // fields are populated by the host as needed. Hosts mount the agent command
 // group by passing a populated Config to the adapter's NewCommand function.
 type Config struct {
-	// ToolName is the short name of the host CLI tool (e.g. "app", "gh").
-	ToolName string
-
 	// Guides is the guide set to serve. Nil means no guides are available.
 	Guides *GuideSet
 
@@ -322,7 +354,10 @@ type Config struct {
 	// extensions entry and the guide index gains a contract_version line, so
 	// an agent can pin behavior to the contract it read. Empty omits the
 	// stamp everywhere. The value is emitted verbatim into a single
-	// "key: value" index line — keep it one line with no colons (a plain
-	// semver string always is).
+	// "key: value" index line — keep it one line with no colons; a plain
+	// semver string always qualifies. A value containing a newline,
+	// carriage return, or colon fails index emission with an error
+	// (export.ErrInvalidContractVersion) rather than corrupting the
+	// line-oriented shape.
 	ContractVersion string
 }

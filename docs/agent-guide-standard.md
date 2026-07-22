@@ -135,9 +135,12 @@ emission stays deterministic, with one documented exception: a host that
 declares its own agent-contract version gets it stamped onto the emitted
 schema root as a `contract_version` extensions entry and onto the guide
 index as a `contract_version` line directly after the header, so an agent
-can pin behavior to the contract it read. Adapters MAY also contribute
-documented, namespaced per-flag extension entries derived from the host's
-flag library.
+can pin behavior to the contract it read. The contract version MUST be a
+single non-blank line containing no colon — it is emitted verbatim into the
+index's line-oriented `key: value` shape, and a conformant implementation
+MUST refuse to emit an index with a value that would corrupt that shape.
+Adapters MAY also contribute documented, namespaced per-flag extension
+entries derived from the host's flag library.
 
 The recommended shape for the single-guide view (`agent guide <slug>`) is
 the reading-oriented runbook: the title as an H1 heading followed by the six
@@ -171,6 +174,13 @@ guide files.
 *   Every `guides/*.md` parses; required frontmatter present; slug == filename;
     slug satisfies the Agent Skills name rules; description + when_to_use fit
     the 1024-character skill description budget.
+*   Index-emitted frontmatter fields (`title`, `description`, `when_to_use`,
+    and each `commands:`/`aliases:` element) are single-line — a multiline
+    value (e.g. a YAML block scalar) would corrupt or forge entries in the
+    line-oriented index and MUST fail validation.
+*   No guide file contains a form-feed character: the form feed is reserved
+    as the guide-concatenation separator, so content containing one would
+    make `agent guide --all` split ambiguously and MUST fail validation.
 *   The six section headings are present, in order.
 *   Every command path referenced in `sh` blocks and `commands:` frontmatter
     exists in the live command tree.

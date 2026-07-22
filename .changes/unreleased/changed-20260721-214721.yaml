@@ -1,0 +1,3 @@
+kind: changed
+body: A `Config.ContractVersion` containing a newline, carriage return, or colon now fails guide index emission with an error instead of corrupting the index's line-oriented shape
+time: 2026-07-21T21:47:21.641143667-04:00

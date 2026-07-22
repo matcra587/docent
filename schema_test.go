@@ -637,3 +637,28 @@ func TestSchemaRegistry_determinism(t *testing.T) {
 		t.Errorf("Apply is not deterministic:\nfirst:  %s\nsecond: %s", first, second)
 	}
 }
+
+// TestMarshalSchema pins the canonical emission shape — two-space indent,
+// no trailing newline — and the wrapped error for a tree carrying a
+// non-marshalable extension value.
+func TestMarshalSchema(t *testing.T) {
+	t.Parallel()
+
+	data, err := docent.MarshalSchema(docent.Command{Name: "app", Path: "app"})
+	if err != nil {
+		t.Fatalf("MarshalSchema: %v", err)
+	}
+
+	if want := "{\n  \"name\": \"app\",\n  \"path\": \"app\"\n}"; string(data) != want {
+		t.Errorf("MarshalSchema = %q, want %q", data, want)
+	}
+
+	_, err = docent.MarshalSchema(docent.Command{
+		Name:       "app",
+		Path:       "app",
+		Extensions: map[string]any{"bad": make(chan int)},
+	})
+	if err == nil {
+		t.Fatal("MarshalSchema: expected error for non-marshalable extension, got nil")
+	}
+}

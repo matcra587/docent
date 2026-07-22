@@ -1,0 +1,3 @@
+kind: breaking
+body: 'Remove the unused Config.ToolName field: like the previously removed Config.Version, it was documented and populated by hosts but read by nothing — the tool''s name already lives on the schema root via the adapter''s tree walker'
+time: 2026-07-21T22:15:01.001843555-04:00

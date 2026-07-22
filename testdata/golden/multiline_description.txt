@@ -1,0 +1,1 @@
+docent: sneaky.md: description must be a single line

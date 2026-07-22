@@ -64,7 +64,7 @@ func mountAgent(root *cobra.Command) error {
 		return err
 	}
 
-	cfg := docent.Config{ToolName: "app", Guides: guides, Command: docentcobra.Tree(root)}
+	cfg := docent.Config{Guides: guides, Command: docentcobra.Tree(root)}
 	root.AddCommand(docentcobra.NewCommand(cfg))
 
 	return nil
@@ -79,7 +79,8 @@ and [_examples/glamour-host](_examples/glamour-host) for a full host.
 
 ```text
 docent/            core: guide and schema model, loading, and validation
-docent/export/     agent-skill rendering
+docent/export/     agent-skill rendering plus the standard's serving
+                   artifacts: guide index, concatenation, root-scoped writes
 docent/cobra/      cobra adapter: tree walker + mountable `agent` command group
 docent/harness/    agent-runtime detection from environment markers
 docent/docenttest/ contract-test helpers

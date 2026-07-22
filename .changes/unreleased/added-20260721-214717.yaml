@@ -1,0 +1,3 @@
+kind: added
+body: Add `export.Write` writing rendered artifacts under an os.Root-guarded directory, hoisting the path-escape protection out of the cobra adapter for any host or adapter to reuse
+time: 2026-07-21T21:47:17.221697561-04:00

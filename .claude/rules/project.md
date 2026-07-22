@@ -22,7 +22,10 @@ of its own.
 ```text
 docent            core: Guide, Section, GuideSet, Command/Flag/FlagGroup,
                   LoadGuides(fs.FS), validation keyed to StandardVersion
-docent/export     renderers: guide → agent-skill (SKILL.md shape)
+docent/export     renderers (guide → agent-skill SKILL.md shape) plus the
+                  standard's serving artifacts: Index, Concat, root-scoped
+                  Write — adapters plumb flags around these, never re-spell
+                  the byte shapes
 docent/cobra      adapter: Tree(root) walker + NewCommand(cfg) mountable
                   `agent` command group; the ONLY package that may import
                   cobra (depguard-enforced)

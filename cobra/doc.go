@@ -17,7 +17,7 @@
 // returns the framework-neutral Command IR defined in the parent package,
 // and NewCommand, which returns the mountable "agent" command group:
 //
-//	cfg := docent.Config{ToolName: "app", Guides: guides, Command: docentcobra.Tree(root)}
+//	cfg := docent.Config{Guides: guides, Command: docentcobra.Tree(root)}
 //	root.AddCommand(docentcobra.NewCommand(cfg))
 //
 // NewGuideCommand additionally mounts the same guide browser as a

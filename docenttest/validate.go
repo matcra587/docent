@@ -23,6 +23,8 @@ import (
 //   - [docent.ErrInvalidSections] – wrong number or order of body sections
 //   - [docent.ErrDuplicateOrder] – two guides share the same order value
 //   - [docent.ErrAliasCollision] – an alias is empty, declared twice, or shadows a slug
+//   - [docent.ErrMultilineField] – an index-emitted frontmatter field contains a newline
+//   - [docent.ErrFormFeed] – a guide file contains a form-feed character
 //   - [docent.ErrCommandNotFound] – a guide lists a command not present in root
 //
 // When root is the zero Command (root.Name == ""), command-reference checking
@@ -43,7 +45,7 @@ func Check(fsys fs.FS, root docent.Command) []error {
 
 	var errs []error
 
-	for _, g := range gs.Guides() {
+	for g := range gs.All() {
 		for _, cmd := range g.Commands {
 			if _, ok := docent.FindByPath(root, cmd); !ok {
 				errs = append(errs, &docent.ValidationError{
@@ -72,6 +74,8 @@ func Check(fsys fs.FS, root docent.Command) []error {
 //   - "invalid sections: …" wraps [docent.ErrInvalidSections]
 //   - "duplicate order: …" wraps [docent.ErrDuplicateOrder]
 //   - "alias collision: …" wraps [docent.ErrAliasCollision]
+//   - "multiline field: …" wraps [docent.ErrMultilineField]
+//   - "form feed: …" wraps [docent.ErrFormFeed]
 //   - "unknown command reference: …" wraps [docent.ErrCommandNotFound]
 //
 // When root is the zero Command, command-reference checking is skipped.
@@ -94,6 +98,8 @@ func Validate(tb testing.TB, fsys fs.FS, root docent.Command) {
 		{docent.ErrInvalidSections, "invalid sections"},
 		{docent.ErrDuplicateOrder, "duplicate order"},
 		{docent.ErrAliasCollision, "alias collision"},
+		{docent.ErrMultilineField, "multiline field"},
+		{docent.ErrFormFeed, "form feed"},
 		{docent.ErrCommandNotFound, "unknown command reference"},
 	}
 

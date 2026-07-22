@@ -53,6 +53,20 @@ var (
 	// Agent Skills spec caps at 500 characters.
 	ErrCompatibilityTooLong = errors.New("docent: compatibility budget exceeded")
 
+	// ErrMultilineField is returned when a frontmatter field the guide index
+	// emits line-oriented — title, description, when_to_use, or a commands or
+	// aliases element — contains a newline. A multiline value would corrupt
+	// the index's key: value shape (or forge extra entries), so it fails the
+	// load.
+	ErrMultilineField = errors.New("docent: multiline frontmatter field")
+
+	// ErrFormFeed is returned when a guide file contains a form-feed
+	// character. The form feed is reserved as the guide-concatenation
+	// separator (export.GuideSeparator, the adapter's "agent guide --all"),
+	// so content containing one would make the concatenation split
+	// ambiguously.
+	ErrFormFeed = errors.New("docent: form feed in guide content")
+
 	// ErrCommandNotFound is the sentinel adapters and docenttest wrap when a
 	// path or reference names no command in the tree. FindByPath itself
 	// signals absence with its comma-ok result and never returns this error.

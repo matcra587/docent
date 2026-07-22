@@ -1,0 +1,3 @@
+kind: changed
+body: 'Guide frontmatter fields the index emits (title, description, when_to_use, commands and aliases elements) must be single-line: LoadGuides now rejects multiline values with `ErrMultilineField`, closing an index-forgery vector via YAML block scalars'
+time: 2026-07-21T22:05:53.480221818-04:00

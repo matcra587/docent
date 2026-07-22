@@ -71,10 +71,9 @@ func run() error {
 
 	root := &cobra.Command{Use: "host", Short: "Example docent host."}
 	cfg := docent.Config{
-		ToolName: "host",
-		Guides:   guides,
-		Command:  docentcobra.Tree(root),
-		Out:      out,
+		Guides:  guides,
+		Command: docentcobra.Tree(root),
+		Out:     out,
 	}
 
 	// Two doors, one guide set: the agent namespace and the human command.

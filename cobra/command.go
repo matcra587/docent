@@ -1,11 +1,9 @@
 package cobra
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 
 	gocobra "github.com/spf13/cobra"
@@ -14,11 +12,6 @@ import (
 	"github.com/matcra587/docent/export"
 	"github.com/matcra587/docent/harness"
 )
-
-// guideSeparator divides guides in "agent guide --all" output. A form-feed
-// line cannot appear in Markdown guide content, so splitting on it is
-// unambiguous — unlike "---", which every guide's frontmatter opens with.
-const guideSeparator = "\f\n"
 
 // Option configures the behavior of NewCommand. Use the With* constructors
 // to build options; the zero-argument call NewCommand(cfg) is always valid.
@@ -226,7 +219,7 @@ are concatenated in canonical order, separated by form-feed lines.`,
 			}
 
 			var slugs []string
-			for _, g := range cfg.Guides.Guides() {
+			for g := range cfg.Guides.All() {
 				slugs = append(slugs, g.Slug)
 			}
 
@@ -287,41 +280,15 @@ func mustRegisterCompletion(cmd *gocobra.Command, flag string, values func() []s
 }
 
 // runGuideList emits the frontmatter-only index for all guides in canonical
-// order. Each guide's frontmatter fields are rendered as key:value lines
-// separated by blank lines. This is the token-economical index view for agents.
+// order — the token-economical index view for agents. The artifact shape is
+// owned by export.Index; this adapter only plumbs flags and output.
 func runGuideList(cmd *gocobra.Command, cfg docent.Config, gs *docent.GuideSet) error {
-	guides := gs.Guides()
-
-	var sb strings.Builder
-
-	fmt.Fprintf(&sb, "# Agent Guide Index (%d guides)\n", len(guides))
-
-	// The host contract version rides the index — the one surface every
-	// agent reads first — so behavior can be pinned without a schema call.
-	if cfg.ContractVersion != "" {
-		fmt.Fprintf(&sb, "contract_version: %s\n", cfg.ContractVersion)
+	index, err := export.Index(gs.Guides(), cfg.ContractVersion)
+	if err != nil {
+		return err
 	}
 
-	for _, g := range guides {
-		sb.WriteString("\n")
-		fmt.Fprintf(&sb, "slug: %s\n", g.Slug)
-		fmt.Fprintf(&sb, "title: %s\n", g.Title)
-		fmt.Fprintf(&sb, "description: %s\n", g.Description)
-		fmt.Fprintf(&sb, "when_to_use: %s\n", g.WhenToUse)
-		fmt.Fprintf(&sb, "commands: %s\n", strings.Join(g.Commands, ", "))
-
-		// Aliases surface in the index so an agent holding an old name can
-		// map it to the canonical slug without a failed lookup first.
-		if len(g.Aliases) > 0 {
-			fmt.Fprintf(&sb, "aliases: %s\n", strings.Join(g.Aliases, ", "))
-		}
-
-		if g.Order != nil {
-			fmt.Fprintf(&sb, "order: %d\n", *g.Order)
-		}
-	}
-
-	return writeText(cmd, cfg, sb.String())
+	return writeText(cmd, cfg, index)
 }
 
 // runGuideSingle emits a single guide by slug. When section is non-empty only
@@ -339,36 +306,22 @@ func runGuideSingle(cmd *gocobra.Command, cfg docent.Config, gs *docent.GuideSet
 	}
 
 	if section != "" {
-		for _, s := range g.Sections {
-			if strings.EqualFold(s.Heading, section) {
-				return writeText(cmd, cfg, s.Body+"\n")
-			}
+		s, ok := g.Section(section)
+		if !ok {
+			return fmt.Errorf("%w: %q in guide %q", ErrSectionNotFound, section, slug)
 		}
 
-		return fmt.Errorf("%w: %q in guide %q", ErrSectionNotFound, section, slug)
+		return writeText(cmd, cfg, s.Body+"\n")
 	}
 
 	return writeText(cmd, cfg, export.Runbook{}.Render(g))
 }
 
-// runGuideAll concatenates all guide raw content in canonical order,
-// separating guides with a form-feed line so agents can split the output
-// unambiguously (guide content itself never contains a form feed).
+// runGuideAll concatenates all guide raw content in canonical order via
+// export.Concat, separated by form-feed lines so agents can split the
+// output unambiguously (guide content itself never contains a form feed).
 func runGuideAll(cmd *gocobra.Command, cfg docent.Config, gs *docent.GuideSet) error {
-	guides := gs.Guides()
-
-	var sb strings.Builder
-
-	for i, g := range guides {
-		if i > 0 {
-			sb.WriteString(guideSeparator)
-		}
-
-		sb.Write(g.Raw)
-		sb.WriteString("\n")
-	}
-
-	return writeText(cmd, cfg, sb.String())
+	return writeText(cmd, cfg, export.Concat(gs.Guides()))
 }
 
 // agentSchemaCmd creates the "agent schema" subcommand. It emits the
@@ -406,13 +359,14 @@ at that command is emitted, using the space-separated path form (e.g. "issue cre
 
 			tree = stampContractVersion(tree, cfg.ContractVersion)
 
-			data, err := json.MarshalIndent(tree, "", "  ")
+			data, err := docent.MarshalSchema(tree)
 			if err != nil {
-				return fmt.Errorf("docent: marshal schema: %w", err)
+				return err
 			}
 
-			// Transforms own the final shape, trailing newline included;
-			// only the untransformed default appends one.
+			// Transforms own the final shape, trailing newline included, and
+			// receive the bare JSON per the SchemaTransform contract; only
+			// the untransformed default appends the artifact newline.
 			if len(transforms) == 0 {
 				return writeText(cmd, cfg, string(data)+"\n")
 			}
@@ -619,8 +573,11 @@ func resolveExportDestination(format, dir, scope string) (resolvedFormat, resolv
 		return format, dir, "", nil
 	}
 
-	if scope != harness.ScopeProject && scope != harness.ScopeUser {
-		return "", "", "", fmt.Errorf("docent: unsupported scope %q; supported scopes: project, user", scope)
+	// Scope is validated before harness detection so a typo reports as a
+	// scope problem regardless of the environment; the single spelling of
+	// the check lives in harness.ValidateScope.
+	if err := harness.ValidateScope(scope); err != nil {
+		return "", "", "", err
 	}
 
 	h, ok := harness.Detect(os.LookupEnv)
@@ -634,15 +591,11 @@ func resolveExportDestination(format, dir, scope string) (resolvedFormat, resolv
 		format = h.DefaultFormat
 	}
 
-	resolvedDir = filepath.FromSlash(h.SkillsDir)
-
-	if scope == harness.ScopeUser {
-		home, homeErr := os.UserHomeDir()
-		if homeErr != nil {
-			return "", "", "", fmt.Errorf("docent: resolve home directory for --scope user: %w", homeErr)
-		}
-
-		resolvedDir = filepath.Join(home, resolvedDir)
+	// The scope-to-directory mapping is harness convention, owned by
+	// harness.SkillsPath; the adapter only decides flag interaction.
+	resolvedDir, err = h.SkillsPath(scope)
+	if err != nil {
+		return "", "", "", err
 	}
 
 	header = fmt.Sprintf("# detected %s; exporting to %s\n", h.Name, resolvedDir)
@@ -688,59 +641,22 @@ func supportedHarnessNames() []string {
 	return names
 }
 
-// runExport renders every guide and writes one artifact per guide under dir,
-// reporting each written path relative to dir — preceded by header when one
-// is given — through the text output hook. Every relative path is validated
-// as local before anything is written, so a lexically escaping path cannot
-// leave partial artifacts behind; the writes themselves go through an
-// os.Root, which refuses any path component that resolves outside dir — a
-// planted symlink, a ".." segment, an absolute path — at open time instead
-// of following it.
+// runExport writes every guide's artifact under dir through export.Write —
+// which owns path validation and the os.Root boundary — then reports each
+// written path relative to dir, preceded by header when one is given,
+// through the text output hook.
 func runExport(cmd *gocobra.Command, cfg docent.Config, gs *docent.GuideSet, r export.Renderer, dir, header string) error {
-	guides := gs.Guides()
-
-	// Each guide's RelPath is resolved exactly once: the slash form feeds
-	// the report and error messages, the OS form feeds the writes, and no
-	// later call can diverge from what was validated here.
-	slashRels := make([]string, len(guides))
-	rels := make([]string, len(guides))
-
-	for i, g := range guides {
-		slashRels[i] = r.RelPath(g)
-
-		rels[i] = filepath.FromSlash(slashRels[i])
-		if !filepath.IsLocal(rels[i]) {
-			return fmt.Errorf("docent: export path %q escapes --dir", slashRels[i])
-		}
-	}
-
-	if err := os.MkdirAll(dir, 0o750); err != nil {
-		return fmt.Errorf("docent: create export directory: %w", err)
-	}
-
-	root, err := os.OpenRoot(dir)
+	rels, err := export.Write(dir, r, gs.Guides())
 	if err != nil {
-		return fmt.Errorf("docent: open export directory: %w", err)
+		return err
 	}
-
-	// Close releases the directory handle only; every write is already
-	// flushed and closed by WriteFile, so its error carries nothing.
-	defer func() { _ = root.Close() }()
 
 	var report strings.Builder
 
 	report.WriteString(header)
 
-	for i, g := range guides {
-		if err := root.MkdirAll(filepath.Dir(rels[i]), 0o750); err != nil {
-			return fmt.Errorf("docent: create export directory: %w", err)
-		}
-
-		if err := root.WriteFile(rels[i], []byte(r.Render(g)), 0o600); err != nil {
-			return fmt.Errorf("docent: write %s: %w", slashRels[i], err)
-		}
-
-		report.WriteString(slashRels[i])
+	for _, rel := range rels {
+		report.WriteString(rel)
 		report.WriteString("\n")
 	}
 

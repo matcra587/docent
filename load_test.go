@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -665,6 +666,67 @@ func TestLoadGuides(t *testing.T) {
 			},
 			wantErr: docent.ErrDuplicateOrder,
 		},
+		{
+			// A YAML block scalar legally carries newlines; the index emits
+			// this field as one key: value line, so a multiline value is a
+			// forgery vector and fails the load.
+			name: "multiline_description",
+			fsys: fstest.MapFS{
+				"sneaky.md": {Data: []byte(strings.Join([]string{
+					"---",
+					"slug: sneaky",
+					"title: Sneaky Guide",
+					"description: |-",
+					"  A description.",
+					"  slug: forged",
+					"when_to_use: When sneaking.",
+					"commands: [sneaky run]",
+					"---",
+					"",
+					"## Decide",
+					"",
+					"## Run",
+					"",
+					"## Save",
+					"",
+					"## Preconditions",
+					"",
+					"## Recover",
+					"",
+					"## Next",
+				}, "\n"))},
+			},
+			wantErr: docent.ErrMultilineField,
+		},
+		{
+			// The form feed is the reserved concatenation separator; content
+			// containing one would split "agent guide --all" ambiguously.
+			name: "form_feed_in_body",
+			fsys: fstest.MapFS{
+				"feed.md": {Data: []byte(strings.Join([]string{
+					"---",
+					"slug: feed",
+					"title: Feed Guide",
+					"description: The feed runbook.",
+					"when_to_use: When feeding.",
+					"commands: [feed run]",
+					"---",
+					"",
+					"## Decide",
+					"\f",
+					"## Run",
+					"",
+					"## Save",
+					"",
+					"## Preconditions",
+					"",
+					"## Recover",
+					"",
+					"## Next",
+				}, "\n"))},
+			},
+			wantErr: docent.ErrFormFeed,
+		},
 	}
 
 	for _, tc := range cases {
@@ -738,6 +800,53 @@ func TestGuideSet_nilReceiver(t *testing.T) {
 
 	if g, ok := gs.Resolve("any"); ok {
 		t.Errorf("nil GuideSet Resolve() = %v, true; want zero Guide, false", g)
+	}
+
+	for g := range gs.All() {
+		t.Errorf("nil GuideSet All() yielded %v, want nothing", g)
+	}
+}
+
+// TestGuideSet_All pins the iterator's promises: canonical order matching
+// Guides, boundary deep copies (mutating a yielded guide cannot affect the
+// set), and early exit stopping the iteration.
+func TestGuideSet_All(t *testing.T) {
+	t.Parallel()
+
+	gs, err := docent.LoadGuides(fstest.MapFS{
+		"alpha.md": {Data: guideFile("alpha", "Alpha", "")},
+		"bravo.md": {Data: guideFile("bravo", "Bravo", "order: 1")},
+	})
+	if err != nil {
+		t.Fatalf("LoadGuides: %v", err)
+	}
+
+	var slugs []string
+
+	for g := range gs.All() {
+		slugs = append(slugs, g.Slug)
+
+		// Mutating the yielded copy must not reach the set.
+		g.Commands[0] = "mutated"
+	}
+
+	if want := []string{"bravo", "alpha"}; !slices.Equal(slugs, want) {
+		t.Errorf("All() order = %v, want %v", slugs, want)
+	}
+
+	if g, _ := gs.Get("bravo"); g.Commands[0] == "mutated" {
+		t.Error("mutation through a yielded guide reached the GuideSet")
+	}
+
+	count := 0
+	for range gs.All() {
+		count++
+
+		break
+	}
+
+	if count != 1 {
+		t.Errorf("early exit yielded %d guides, want 1", count)
 	}
 }
 

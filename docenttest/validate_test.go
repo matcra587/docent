@@ -114,6 +114,8 @@ var sentinelPrefixes = map[error]string{
 	docent.ErrInvalidSections:      "invalid sections:",
 	docent.ErrDuplicateOrder:       "duplicate order:",
 	docent.ErrAliasCollision:       "alias collision:",
+	docent.ErrMultilineField:       "multiline field:",
+	docent.ErrFormFeed:             "form feed:",
 	docent.ErrCommandNotFound:      "unknown command reference:",
 }
 
@@ -498,6 +500,30 @@ func TestCheck_Violations(t *testing.T) {
 			},
 			root:     docent.Command{}, // zero value: command check is skipped
 			wantNone: true,
+		},
+		{
+			name: "multiline_description",
+			fsys: fstest.MapFS{
+				"multi.md": {Data: []byte(strings.Replace(
+					string(buildValidGuide("multi", []string{"multi run"})),
+					"description: A description for multi.",
+					"description: |-\n  A description.\n  slug: forged",
+					1))},
+			},
+			root:    root,
+			wantErr: docent.ErrMultilineField,
+		},
+		{
+			name: "form_feed_in_body",
+			fsys: fstest.MapFS{
+				"feed.md": {Data: []byte(strings.Replace(
+					string(buildValidGuide("feed", []string{"feed run"})),
+					"## Decide\nContent.",
+					"## Decide\n\f",
+					1))},
+			},
+			root:    root,
+			wantErr: docent.ErrFormFeed,
 		},
 	}
 

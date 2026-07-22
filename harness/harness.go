@@ -1,9 +1,18 @@
 package harness
 
 import (
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 )
+
+// ErrUnsupportedScope is the sentinel ValidateScope and SkillsPath wrap when
+// a scope names neither ScopeProject nor ScopeUser, so hosts can branch with
+// errors.Is instead of matching message text.
+var ErrUnsupportedScope = errors.New("docent: unsupported scope")
 
 // The two skill-installation scopes every supported harness distinguishes:
 // skills committed with the project versus skills installed for the user
@@ -33,8 +42,50 @@ type Harness struct {
 	// SkillsDir is the skills directory in forward-slash form, relative to
 	// the scope's root: the working directory for ScopeProject, the user's
 	// home directory for ScopeUser. The relative path is scope-independent
-	// for every supported harness; only the root differs.
+	// for every supported harness; only the root differs. SkillsPath
+	// resolves it for a concrete scope.
 	SkillsDir string
+}
+
+// ValidateScope reports whether scope names a known skill-installation
+// scope, returning an error wrapping ErrUnsupportedScope otherwise. It is
+// the single spelling of scope validation: SkillsPath calls it before
+// resolving, and adapters call it to pre-validate flag input before any
+// harness detection.
+func ValidateScope(scope string) error {
+	switch scope {
+	case ScopeProject, ScopeUser:
+		return nil
+	default:
+		return fmt.Errorf("%w %q; supported scopes: %s, %s",
+			ErrUnsupportedScope, scope, ScopeProject, ScopeUser)
+	}
+}
+
+// SkillsPath resolves the harness's skills directory for a scope, in OS
+// path form: ScopeProject returns SkillsDir relative to the working
+// directory, ScopeUser joins it under the user's home directory. The
+// scope-to-root mapping lives here — one authority for what a scope means —
+// so adapters and hosts cannot disagree on where a harness's skills
+// install. An unknown scope errors with ErrUnsupportedScope; a home
+// directory that cannot be resolved is also an error.
+func (h Harness) SkillsPath(scope string) (string, error) {
+	if err := ValidateScope(scope); err != nil {
+		return "", err
+	}
+
+	dir := filepath.FromSlash(h.SkillsDir)
+
+	if scope == ScopeUser {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", fmt.Errorf("docent: resolve home directory for scope %q: %w", scope, err)
+		}
+
+		return filepath.Join(home, dir), nil
+	}
+
+	return dir, nil
 }
 
 // Supported lists every harness Detect can identify — the runtimes with
@@ -134,12 +185,16 @@ var validAgentName = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
 // and "off" (any case) count as unset, so an explicit CLAUDECODE=0 reads as
 // "not this agent" rather than "agent present".
 //
-// The returned name is the detected runtime's identifier; ok is false when
-// no agent is detected. Hosts branch on the boolean for output-mode
-// resolution and may surface the name in diagnostics.
+// The returned name is the detected runtime's canonical identifier: a
+// version/role qualifier some runtimes append to their override — Claude
+// Code sets AI_AGENT to values like "claude-code_2-1-211_agent" — is
+// stripped once here, so every consumer of the name sees the same spelling
+// (see canonicalAgentName for the exact rule). ok is false when no agent is
+// detected. Hosts branch on the boolean for output-mode resolution and may
+// surface the name in diagnostics.
 func DetectAgent(lookup func(string) (string, bool)) (string, bool) {
 	if v, ok := lookup("AI_AGENT"); ok && validAgentName.MatchString(v) {
-		return v, true
+		return canonicalAgentName(v), true
 	}
 
 	if v, _ := lookup("AGENT"); v == "amp" {
@@ -157,16 +212,56 @@ func DetectAgent(lookup func(string) (string, bool)) (string, bool) {
 	return "", false
 }
 
+// canonicalAgentName strips the version/role qualifier some runtimes
+// underscore-append to their identifier ("claude-code_2-1-211_agent"): the
+// name is truncated before the first underscore-separated segment that is
+// version-shaped — digits, dots, and hyphens only, starting with a digit.
+// Names without such a segment ("my_agent", "my_2nd_agent") pass through
+// unchanged, and truncation never yields an empty name — a name opening
+// with the qualifier ("_1") passes through rather than vanishing.
+func canonicalAgentName(name string) string {
+	segs := strings.Split(name, "_")
+	for i := 1; i < len(segs); i++ {
+		if !isVersionSegment(segs[i]) {
+			continue
+		}
+
+		if prefix := strings.Join(segs[:i], "_"); prefix != "" {
+			return prefix
+		}
+
+		return name
+	}
+
+	return name
+}
+
+// isVersionSegment reports whether s looks like a version qualifier:
+// non-empty, digits, dots, and hyphens only, starting with a digit.
+func isVersionSegment(s string) bool {
+	if s == "" || s[0] < '0' || s[0] > '9' {
+		return false
+	}
+
+	for i := range len(s) {
+		if c := s[i]; (c < '0' || c > '9') && c != '.' && c != '-' {
+			return false
+		}
+	}
+
+	return true
+}
+
 // Detect identifies the invoking agent runtime's export conventions from the
 // environment via lookup (typically os.LookupEnv; injected for testability).
 // It resolves the agent with DetectAgent — AI_AGENT override included — and
 // returns the matching Supported harness, or false when no agent is detected
 // or the detected agent has no known skills-directory conventions.
 //
-// A detected name matches a harness exactly or as a separated prefix:
-// Claude Code itself sets AI_AGENT to values like "claude-code_2-1-211_agent"
-// (name, version, role, underscore-joined), and a version-qualified runtime
-// must still resolve its harness conventions.
+// A detected name matches a harness exactly or as a separated prefix.
+// DetectAgent already canonicalizes underscore-joined version qualifiers,
+// so the prefix match is defense in depth for qualifier shapes that rule
+// does not cover (e.g. hyphen-joined suffixes).
 func Detect(lookup func(string) (string, bool)) (Harness, bool) {
 	name, ok := DetectAgent(lookup)
 	if !ok {

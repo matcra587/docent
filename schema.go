@@ -1,6 +1,10 @@
 package docent
 
-import "reflect"
+import (
+	"encoding/json"
+	"fmt"
+	"reflect"
+)
 
 // Command is a framework-neutral schema IR node for one command in a CLI tree.
 // Children are sorted by Name for deterministic, byte-stable output. The zero
@@ -63,6 +67,25 @@ type Command struct {
 
 	// Children contains this command's direct subcommands, sorted by Name.
 	Children []Command `json:"children,omitempty"`
+}
+
+// MarshalSchema renders cmd as the canonical schema JSON emission:
+// two-space indented, no trailing newline, matching the stdlib Marshal
+// convention. It is the single source for the byte shape of the "agent
+// schema" surface — the cobra adapter's schema command and
+// docenttest.SchemaGolden both emit through it (each appending the
+// artifact's trailing newline at its write site), so a golden pinned with
+// one cannot drift from the bytes the other writes. The adapter may further
+// stamp a contract version and apply host schema transforms on top of this
+// shape; goldens that must pin those effects golden the command output
+// itself.
+func MarshalSchema(cmd Command) ([]byte, error) {
+	data, err := json.MarshalIndent(cmd, "", "  ")
+	if err != nil {
+		return nil, fmt.Errorf("docent: marshal schema: %w", err)
+	}
+
+	return data, nil
 }
 
 // Clone returns a deep copy of c sharing no slice or map storage with it,

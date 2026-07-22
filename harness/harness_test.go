@@ -1,6 +1,9 @@
 package harness_test
 
 import (
+	"errors"
+	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/matcra587/docent/harness"
@@ -173,6 +176,10 @@ func TestDetectAgent(t *testing.T) {
 	}{
 		{"AI_AGENT override wins over markers", map[string]string{"AI_AGENT": "my-wrapper", "CLAUDECODE": "1"}, "my-wrapper"},
 		{"AI_AGENT with invalid characters ignored", map[string]string{"AI_AGENT": "not a name!", "CLAUDECODE": "1"}, "claude-code"},
+		{"AI_AGENT version qualifier canonicalized", map[string]string{"AI_AGENT": "claude-code_2-1-211_agent"}, "claude-code"},
+		{"AI_AGENT underscore name without version passes through", map[string]string{"AI_AGENT": "my_agent"}, "my_agent"},
+		{"AI_AGENT digit-leading non-version segment passes through", map[string]string{"AI_AGENT": "my_2nd_agent"}, "my_2nd_agent"},
+		{"AI_AGENT leading qualifier cannot canonicalize to empty", map[string]string{"AI_AGENT": "_1"}, "_1"},
 		{"AGENT amp", map[string]string{"AGENT": "amp"}, "amp"},
 		{"AGENT non-amp ignored", map[string]string{"AGENT": "vim"}, ""},
 		{"gemini via GEMINI_CLI", map[string]string{"GEMINI_CLI": "1"}, "gemini-cli"},
@@ -242,5 +249,72 @@ func TestAgents(t *testing.T) {
 		if !seen[h.Name] {
 			t.Errorf("Supported() harness %q missing from Agents()", h.Name)
 		}
+	}
+}
+
+// homeEnvKey names the environment variable os.UserHomeDir consults on the
+// current platform, so the user-scope test can pin the home join portably.
+func homeEnvKey() string {
+	switch runtime.GOOS {
+	case "windows":
+		return "USERPROFILE"
+	case "plan9":
+		return "home"
+	default:
+		return "HOME"
+	}
+}
+
+// TestHarness_SkillsPath pins the scope-to-root mapping directly at the
+// harness level: the cobra --scope tests reach the project and user
+// branches, but the unsupported-scope branch is pre-validated away by the
+// adapter and reachable only here.
+func TestHarness_SkillsPath(t *testing.T) {
+	t.Parallel()
+
+	h := harness.Harness{Name: "claude-code", SkillsDir: ".claude/skills"}
+
+	t.Run("project is relative to the working directory", func(t *testing.T) {
+		t.Parallel()
+
+		got, err := h.SkillsPath(harness.ScopeProject)
+		if err != nil {
+			t.Fatalf("SkillsPath(project): %v", err)
+		}
+
+		if want := filepath.FromSlash(".claude/skills"); got != want {
+			t.Errorf("SkillsPath(project) = %q, want %q", got, want)
+		}
+	})
+
+	t.Run("unknown scope wraps ErrUnsupportedScope", func(t *testing.T) {
+		t.Parallel()
+
+		_, err := h.SkillsPath("bogus")
+		if !errors.Is(err, harness.ErrUnsupportedScope) {
+			t.Errorf("SkillsPath(bogus) error = %v, want errors.Is(err, ErrUnsupportedScope)", err)
+		}
+
+		if err := harness.ValidateScope(harness.ScopeProject); err != nil {
+			t.Errorf("ValidateScope(project) = %v, want nil", err)
+		}
+	})
+}
+
+// TestHarness_SkillsPathUserScope pins the user-scope home join. Separate
+// from TestHarness_SkillsPath because t.Setenv forbids a parallel parent.
+func TestHarness_SkillsPathUserScope(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv(homeEnvKey(), home)
+
+	h := harness.Harness{Name: "claude-code", SkillsDir: ".claude/skills"}
+
+	got, err := h.SkillsPath(harness.ScopeUser)
+	if err != nil {
+		t.Fatalf("SkillsPath(user): %v", err)
+	}
+
+	if want := filepath.Join(home, ".claude", "skills"); got != want {
+		t.Errorf("SkillsPath(user) = %q, want %q", got, want)
 	}
 }

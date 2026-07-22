@@ -11,6 +11,7 @@ import (
 
 	"github.com/matcra587/docent"
 	docentcobra "github.com/matcra587/docent/cobra"
+	"github.com/matcra587/docent/export"
 	gocobra "github.com/spf13/cobra"
 )
 
@@ -150,6 +151,17 @@ func TestAgentGuide_section(t *testing.T) {
 	}
 
 	checkGuideGolden(t, "guide_section_bravo_run", string(out))
+
+	// Section lookup is case-insensitive (Guide.Section); a shouted heading
+	// serves the same bytes.
+	upper, err := executeAgent(cfg, nil, "agent", "guide", "bravo", "--section", "RUN")
+	if err != nil {
+		t.Fatalf("Execute --section RUN: %v", err)
+	}
+
+	if string(upper) != string(out) {
+		t.Errorf("--section RUN output differs from --section Run:\n--- Run\n%s\n+++ RUN\n%s", out, upper)
+	}
 }
 
 // TestAgentGuide_all verifies that "agent guide --all" emits all guides
@@ -217,6 +229,23 @@ func TestAgentGuide_indexContractVersion(t *testing.T) {
 
 	if strings.Contains(string(bare), "contract_version") {
 		t.Error("contract_version present in index with empty Config.ContractVersion")
+	}
+}
+
+// TestAgentGuide_invalidContractVersion pins the emission guard: a
+// ContractVersion that would corrupt the line-oriented index shape (colon,
+// newline) fails the index with an error instead of serving unparsable
+// output.
+func TestAgentGuide_invalidContractVersion(t *testing.T) {
+	t.Parallel()
+
+	gs := mustLoadGuides(t, guideValidFS)
+
+	for _, bad := range []string{"2:1", "2.1\nextra", " "} {
+		_, err := executeAgent(docent.Config{Guides: gs, ContractVersion: bad}, nil, "agent", "guide")
+		if !errors.Is(err, export.ErrInvalidContractVersion) {
+			t.Errorf("ContractVersion %q: error = %v, want errors.Is(err, export.ErrInvalidContractVersion)", bad, err)
+		}
 	}
 }
 

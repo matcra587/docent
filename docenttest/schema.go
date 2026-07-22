@@ -1,7 +1,6 @@
 package docenttest
 
 import (
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -11,9 +10,13 @@ import (
 
 // SchemaGolden asserts that cmd's canonical schema JSON is byte-identical to
 // the golden file at goldenPath, writing the file instead when update is
-// true. The emission — two-space-indented JSON with a trailing newline — is
-// exactly what the adapter's "agent schema" command writes, so the golden
-// pins the artifact agents actually read, not a lookalike.
+// true. The emission goes through [docent.MarshalSchema] — the same function
+// the adapter's "agent schema" command writes through — so the golden pins
+// the artifact agents actually read, not a lookalike. Two adapter effects
+// sit on top of the canonical shape and are not covered here: the
+// contract-version stamp (Config.ContractVersion) and host schema
+// transforms. Hosts relying on either effect should golden the schema
+// command's output itself.
 //
 // Hosts whose trees carry volatile flag defaults (ephemeral ports, home-dir
 // paths, timestamps) golden a masked copy via MaskFlagDefaults first;
@@ -21,7 +24,7 @@ import (
 func SchemaGolden(tb testing.TB, cmd docent.Command, goldenPath string, update bool) {
 	tb.Helper()
 
-	data, err := json.MarshalIndent(cmd, "", "  ")
+	data, err := docent.MarshalSchema(cmd)
 	if err != nil {
 		tb.Fatalf("marshal schema: %v", err)
 	}

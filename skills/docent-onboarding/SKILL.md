@@ -101,7 +101,7 @@ tree.Extensions = map[string]any{ // host contract metadata, host-owned
 	"exit_codes": map[string]any{"validation": 4},
 }
 
-cfg := docent.Config{ToolName: "tool", Guides: guides, Command: tree}
+cfg := docent.Config{Guides: guides, Command: tree}
 root.AddCommand(docentcobra.NewCommand(cfg))
 ```
 

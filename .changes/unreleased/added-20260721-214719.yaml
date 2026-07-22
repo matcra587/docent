@@ -1,0 +1,3 @@
+kind: added
+body: Add `GuideSet.All` returning a lazy iterator over guides in canonical order, yielding boundary copies per guide so early-exit consumers skip the cost of copying the whole corpus
+time: 2026-07-21T21:47:19.432364944-04:00
