@@ -1,3 +1,0 @@
-kind: added
-body: Add cobra.WithSkillNameQualifier for host-qualified built-in agent-skill and claude-skill exports without changing source guide slugs or lookup.
-time: 2026-07-22T21:42:50-04:00
