@@ -1,11 +1,15 @@
 package export
 
 import (
+	"errors"
+	"fmt"
 	"maps"
 	"path"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/matcra587/docent"
 )
@@ -28,38 +32,78 @@ type Renderer interface {
 	RelPath(g docent.Guide) string
 }
 
+// ValidatingRenderer is a Renderer that validates a guide before Write
+// creates the export directory. The built-in skill renderers implement it
+// so a host-supplied name qualifier cannot produce a non-conformant skill.
+// Host renderers may implement it when their own artifact contract has
+// validation that must complete before any files are written.
+type ValidatingRenderer interface {
+	Renderer
+
+	// Validate reports whether g can be rendered without violating the
+	// renderer's artifact contract.
+	Validate(g docent.Guide) error
+}
+
+// skillNamePattern is the Agent Skills name grammar: lowercase alphanumeric
+// runs separated by single hyphens.
+var skillNamePattern = regexp.MustCompile(`^[a-z0-9]+(?:-[a-z0-9]+)*$`)
+
+// maxSkillNameLen is the Agent Skills name length cap in characters.
+const maxSkillNameLen = 64
+
 // AgentSkill renders a docent.Guide to the portable SKILL.md shape defined
 // by the Agent Skills open standard (agentskills.io), the common format
 // consumed by Claude Code, Codex, and other agent runtimes. The frontmatter
-// carries exactly the spec's two required fields: name (the guide slug,
-// which also names the artifact directory, satisfying the spec's
-// name-matches-directory rule) and description (the guide description and
-// when_to_use joined, so a harness can decide whether to load the skill
-// without reading the runbook).
+// carries exactly the spec's two required fields: name (the optionally
+// qualified guide slug, which also names the artifact directory, satisfying
+// the spec's name-matches-directory rule) and description (the guide
+// description and when_to_use joined, so a harness can decide whether to load
+// the skill without reading the runbook).
 //
 // Artifacts conform to the neutral spec and pass its reference validator
 // (skills-ref); this is the format to reach for when the consuming harness
 // is unknown.
 //
 // Output is deterministic and byte-stable for identical input.
-type AgentSkill struct{}
+type AgentSkill struct {
+	// NameQualifier prefixes the source guide slug in the emitted skill name
+	// and directory, separated by a hyphen. Empty preserves the source slug
+	// and the historical byte shape. Write validates the final composed name
+	// against the Agent Skills constraints before creating any files.
+	NameQualifier string
+}
 
-// Compile-time assertion: AgentSkill must satisfy the Renderer interface.
-var _ Renderer = (*AgentSkill)(nil)
+// Compile-time assertion: AgentSkill must satisfy the ValidatingRenderer
+// interface, which includes Renderer.
+var _ ValidatingRenderer = (*AgentSkill)(nil)
 
 // Render returns the open-standard SKILL.md text for g.
-func (AgentSkill) Render(g docent.Guide) string {
+func (r AgentSkill) Render(g docent.Guide) string {
 	fm := [][2]string{
 		{"description", g.SkillDescription()},
 	}
 
-	return renderSkill(fm, g)
+	return renderSkill(fm, g, r.skillName(g))
 }
 
 // RelPath returns the artifact path for g relative to the export root:
-// <slug>/SKILL.md, the directory-per-skill layout the spec requires.
-func (AgentSkill) RelPath(g docent.Guide) string {
-	return skillRelPath(g)
+// <name>/SKILL.md, the directory-per-skill layout the spec requires.
+func (r AgentSkill) RelPath(g docent.Guide) string {
+	return skillRelPath(r.skillName(g))
+}
+
+// Validate reports whether the qualified name is a conformant Agent Skills
+// name and matches the artifact's parent directory.
+func (r AgentSkill) Validate(g docent.Guide) error {
+	name := r.skillName(g)
+
+	return validateSkillNameAndPath(name, r.RelPath(g))
+}
+
+// skillName returns the export-only name without mutating g.Slug.
+func (r AgentSkill) skillName(g docent.Guide) string {
+	return qualifiedSkillName(r.NameQualifier, g.Slug)
 }
 
 // ClaudeSkill renders a docent.Guide to the Claude Code variant of the
@@ -80,31 +124,98 @@ func (AgentSkill) RelPath(g docent.Guide) string {
 // stricter, so a valid guide can never exceed it.
 //
 // Output is deterministic and byte-stable for identical input.
-type ClaudeSkill struct{}
+type ClaudeSkill struct {
+	// NameQualifier prefixes the source guide slug in the emitted skill name
+	// and directory, separated by a hyphen. Empty preserves the source slug
+	// and the historical byte shape. Write validates the final composed name
+	// against the Agent Skills constraints before creating any files.
+	NameQualifier string
+}
 
-// Compile-time assertion: ClaudeSkill must satisfy the Renderer interface.
-var _ Renderer = (*ClaudeSkill)(nil)
+// Compile-time assertion: ClaudeSkill must satisfy the ValidatingRenderer
+// interface, which includes Renderer.
+var _ ValidatingRenderer = (*ClaudeSkill)(nil)
 
 // Render returns the Claude Code SKILL.md text for g.
-func (ClaudeSkill) Render(g docent.Guide) string {
+func (r ClaudeSkill) Render(g docent.Guide) string {
 	fm := [][2]string{
 		{"description", g.Description},
 		{"when_to_use", g.WhenToUse},
 	}
 
-	return renderSkill(fm, g)
+	return renderSkill(fm, g, r.skillName(g))
 }
 
 // RelPath returns the artifact path for g relative to the export root:
-// <slug>/SKILL.md, the directory-per-skill layout the spec requires.
-func (ClaudeSkill) RelPath(g docent.Guide) string {
-	return skillRelPath(g)
+// <name>/SKILL.md, the directory-per-skill layout the spec requires.
+func (r ClaudeSkill) RelPath(g docent.Guide) string {
+	return skillRelPath(r.skillName(g))
+}
+
+// Validate reports whether the qualified name is a conformant Agent Skills
+// name and matches the artifact's parent directory.
+func (r ClaudeSkill) Validate(g docent.Guide) error {
+	name := r.skillName(g)
+
+	return validateSkillNameAndPath(name, r.RelPath(g))
+}
+
+// skillName returns the export-only name without mutating g.Slug.
+func (r ClaudeSkill) skillName(g docent.Guide) string {
+	return qualifiedSkillName(r.NameQualifier, g.Slug)
+}
+
+// qualifiedSkillName composes an export-only name. The empty branch is kept
+// explicit so unqualified rendering remains byte-identical.
+func qualifiedSkillName(qualifier, slug string) string {
+	if qualifier == "" {
+		return slug
+	}
+
+	return qualifier + "-" + slug
 }
 
 // skillRelPath is the one artifact layout every skill renderer shares:
-// <slug>/SKILL.md.
-func skillRelPath(g docent.Guide) string {
-	return path.Join(g.Slug, "SKILL.md")
+// <name>/SKILL.md.
+func skillRelPath(name string) string {
+	return path.Join(name, "SKILL.md")
+}
+
+// validateSkillNameAndPath enforces the complete Agent Skills naming
+// contract against the final exported name, including the requirement that
+// frontmatter name match the SKILL.md parent directory.
+func validateSkillNameAndPath(name, rel string) error {
+	var errs []error
+
+	if n := utf8.RuneCountInString(name); n == 0 || n > maxSkillNameLen {
+		errs = append(errs, fmt.Errorf(
+			"%w %q: length is %d characters; expected 1-%d",
+			ErrInvalidSkillName,
+			name,
+			n,
+			maxSkillNameLen,
+		))
+	}
+
+	if !skillNamePattern.MatchString(name) {
+		errs = append(errs, fmt.Errorf(
+			"%w %q: expected lowercase alphanumerics and single hyphens with no leading or trailing hyphen",
+			ErrInvalidSkillName,
+			name,
+		))
+	}
+
+	parent := path.Base(path.Dir(rel))
+	if parent != name {
+		errs = append(errs, fmt.Errorf(
+			"%w %q: frontmatter name does not match parent directory %q",
+			ErrInvalidSkillName,
+			name,
+			parent,
+		))
+	}
+
+	return errors.Join(errs...)
 }
 
 // renderSkill writes the shared SKILL.md shape: the name field, the given
@@ -124,11 +235,11 @@ func skillRelPath(g docent.Guide) string {
 // one line. Guide content is valid UTF-8 by construction — the YAML parser
 // rejected anything else at load — so the \xHH form is never reached with
 // bytes a YAML reader would reinterpret.
-func renderSkill(fm [][2]string, g docent.Guide) string {
+func renderSkill(fm [][2]string, g docent.Guide, name string) string {
 	var b strings.Builder
 
 	b.WriteString("---\nname: ")
-	b.WriteString(g.Slug)
+	b.WriteString(name)
 	b.WriteString("\n")
 
 	for _, kv := range fm {

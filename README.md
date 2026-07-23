@@ -75,6 +75,31 @@ Agents then discover the CLI through `app agent guide`, `app agent schema`,
 and `app agent export`. See the [package docs](https://pkg.go.dev/github.com/matcra587/docent)
 and [_examples/glamour-host](_examples/glamour-host) for a full host.
 
+### Export configuration
+
+Hosts sharing a harness skills root can qualify the two built-in skill
+formats when mounting docent, without changing guide slugs or guide lookup:
+
+```go
+cfg := docent.Config{
+	Guides:  guides,
+	Command: docentcobra.Tree(root),
+}
+
+root.AddCommand(docentcobra.NewCommand(
+	cfg,
+	docentcobra.WithSkillNameQualifier("jira"),
+))
+```
+
+A guide with slug `core-contract` then exports directly beneath the skills
+root as `jira-core-contract/SKILL.md`, with `name: jira-core-contract` in its
+frontmatter. Omit `WithSkillNameQualifier` (the default) to preserve the
+unqualified `<slug>/SKILL.md` output. Formats registered through
+`WithExtraFormat` receive the original guide unchanged and own their naming
+policy; docent applies the qualifier only to `agent-skill` and
+`claude-skill`.
+
 ## Layout
 
 ```text

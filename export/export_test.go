@@ -1,6 +1,8 @@
 package export_test
 
 import (
+	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -38,6 +40,83 @@ func TestAgentSkill_relPath(t *testing.T) {
 
 	if got, want := r.RelPath(sampleGuide()), "bravo/SKILL.md"; got != want {
 		t.Errorf("RelPath = %q, want %q", got, want)
+	}
+}
+
+// TestSkillRenderers_nameQualifier pins the shared qualified-name contract:
+// both built-ins use the same final name for the direct-child directory and
+// frontmatter without mutating the source guide.
+func TestSkillRenderers_nameQualifier(t *testing.T) {
+	t.Parallel()
+
+	renderers := []struct {
+		name     string
+		renderer export.Renderer
+	}{
+		{name: "agent skill", renderer: export.AgentSkill{NameQualifier: "jira"}},
+		{name: "claude skill", renderer: export.ClaudeSkill{NameQualifier: "jira"}},
+	}
+
+	for _, tc := range renderers {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			g := sampleGuide()
+			got := tc.renderer.Render(g)
+
+			if rel, want := tc.renderer.RelPath(g), "jira-bravo/SKILL.md"; rel != want {
+				t.Errorf("RelPath = %q, want %q", rel, want)
+			}
+
+			if !strings.HasPrefix(got, "---\nname: jira-bravo\n") {
+				t.Errorf("qualified frontmatter name missing:\n%s", got)
+			}
+
+			if g.Slug != "bravo" {
+				t.Errorf("source Guide.Slug mutated to %q", g.Slug)
+			}
+		})
+	}
+}
+
+// TestSkillRenderers_invalidFinalName verifies validation is applied after
+// qualifier composition and covers the Agent Skills length, character, and
+// hyphen rules for both built-in formats.
+func TestSkillRenderers_invalidFinalName(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name      string
+		qualifier string
+		slug      string
+	}{
+		{name: "empty", slug: ""},
+		{name: "too long", qualifier: strings.Repeat("a", 64), slug: "bravo"},
+		{name: "uppercase", qualifier: "Jira", slug: "bravo"},
+		{name: "underscore", qualifier: "jira_cli", slug: "bravo"},
+		{name: "leading hyphen", qualifier: "-jira", slug: "bravo"},
+		{name: "consecutive hyphens", qualifier: "jira-", slug: "bravo"},
+		{name: "trailing hyphen", slug: "bravo-"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			g := sampleGuide()
+			g.Slug = tc.slug
+
+			renderers := []export.ValidatingRenderer{
+				export.AgentSkill{NameQualifier: tc.qualifier},
+				export.ClaudeSkill{NameQualifier: tc.qualifier},
+			}
+
+			for _, r := range renderers {
+				if err := r.Validate(g); !errors.Is(err, export.ErrInvalidSkillName) {
+					t.Errorf("Validate error = %v, want errors.Is(err, ErrInvalidSkillName)", err)
+				}
+			}
+		})
 	}
 }
 
@@ -196,4 +275,25 @@ func TestRunbook_shape(t *testing.T) {
 	if got != want {
 		t.Errorf("runbook shape mismatch:\n--- want\n%q\n+++ got\n%q", want, got)
 	}
+}
+
+// ExampleAgentSkill demonstrates applying a host qualifier without changing
+// the source guide slug.
+func ExampleAgentSkill() {
+	g := docent.Guide{
+		Slug:        "core-contract",
+		Title:       "Core contract",
+		Description: "The host contract.",
+		WhenToUse:   "When integrating the CLI.",
+	}
+	r := export.AgentSkill{NameQualifier: "jira"}
+
+	fmt.Println(r.RelPath(g))
+	fmt.Println(strings.Split(r.Render(g), "\n")[1])
+	fmt.Println(g.Slug)
+
+	// Output:
+	// jira-core-contract/SKILL.md
+	// name: jira-core-contract
+	// core-contract
 }

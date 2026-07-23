@@ -109,6 +109,13 @@ cfg := docent.Config{Guides: guides, Command: tree}
 root.AddCommand(docentcobra.NewCommand(cfg))
 ```
 
+If multiple CLIs export into the same harness skills root, pass
+`docentcobra.WithSkillNameQualifier("jira")` to `NewCommand`. It exports guide
+slug `core-contract` as `jira-core-contract/SKILL.md` without changing
+`agent guide core-contract`. Omit the option for unqualified output. The
+qualifier applies only to docent's built-in `agent-skill` and `claude-skill`
+formats; host-supplied extra formats receive the original guide unchanged.
+
 A host with its own agent-contract version sets `Config.ContractVersion`;
 adapters stamp it onto the schema root and the guide index so agents can
 pin behavior. Keep it a single line with no colons — emission fails loudly

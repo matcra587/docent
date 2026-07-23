@@ -19,9 +19,10 @@ type Option func(*cmdOptions)
 
 // cmdOptions holds adapter-specific settings collected from Option values.
 type cmdOptions struct {
-	extraCmds        []*gocobra.Command
-	extraFormats     []exportFormat
-	schemaTransforms []SchemaTransform
+	extraCmds          []*gocobra.Command
+	extraFormats       []exportFormat
+	schemaTransforms   []SchemaTransform
+	skillNameQualifier string
 }
 
 // SchemaTransform rewrites the agent schema command's output bytes before
@@ -51,6 +52,11 @@ func WithExtraCommands(cmds ...*gocobra.Command) Option {
 // messages, and shell completion. Built-in names cannot be shadowed and the
 // first registration of a name wins; an empty name or nil renderer is
 // ignored rather than mounted, matching WithExtraCommands.
+//
+// WithSkillNameQualifier applies only to the built-in agent-skill and
+// claude-skill renderers. Extra formats receive each original Guide unchanged
+// and own their naming and layout policy; configure or wrap r when an extra
+// format should apply the same qualifier.
 func WithExtraFormat(name string, r export.Renderer) Option {
 	return func(o *cmdOptions) {
 		if name == "" || r == nil {
@@ -58,6 +64,28 @@ func WithExtraFormat(name string, r export.Renderer) Option {
 		}
 
 		o.extraFormats = append(o.extraFormats, exportFormat{name: name, renderer: r})
+	}
+}
+
+// WithSkillNameQualifier prefixes names emitted by the built-in agent-skill
+// and claude-skill formats, separated from the source guide slug by a hyphen.
+// For example, qualifier "jira" exports guide slug "core-contract" directly
+// beneath the harness skills root as jira-core-contract/SKILL.md, with
+// frontmatter name jira-core-contract.
+//
+// Qualification is an export-only integration setting: it never mutates the
+// source GuideSet or Guide.Slug, and guide lookup, indexes, and runbooks keep
+// using the source slug. The final composed name is validated against the
+// Agent Skills length, character, and hyphen constraints before any files are
+// written. An empty qualifier preserves the unqualified, byte-identical
+// historical output. When this option is supplied more than once, the last
+// value wins.
+//
+// Host-supplied formats registered through WithExtraFormat are not rewritten;
+// they receive the original Guide and own their naming and layout policy.
+func WithSkillNameQualifier(qualifier string) Option {
+	return func(o *cmdOptions) {
+		o.skillNameQualifier = qualifier
 	}
 }
 
@@ -88,10 +116,15 @@ func WithSchemaTransform(t SchemaTransform) Option {
 //
 //	root.AddCommand(docentcobra.NewCommand(cfg))
 //
-// Optional behavior — such as mounting host-supplied extra subcommands — is
-// controlled via Option values:
+// Optional integration behavior is controlled via Option values. For
+// example, a host sharing a harness skills root qualifies only its exported
+// built-in skills while mounting domain-specific agent commands:
 //
-//	root.AddCommand(docentcobra.NewCommand(cfg, docentcobra.WithExtraCommands(adfMatrix, fieldTypes)))
+//	root.AddCommand(docentcobra.NewCommand(
+//		cfg,
+//		docentcobra.WithSkillNameQualifier("jira"),
+//		docentcobra.WithExtraCommands(adfMatrix, fieldTypes),
+//	))
 //
 // The agent command group provides agent-facing subcommands for guide
 // retrieval, schema introspection, and skill export. It never modifies the
@@ -120,7 +153,7 @@ func NewCommand(cfg docent.Config, opts ...Option) *gocobra.Command {
 
 	agent.AddCommand(agentSchemaCmd(cfg, o.schemaTransforms))
 	agent.AddCommand(agentGuideCmd(cfg))
-	agent.AddCommand(agentExportCmd(cfg, o.extraFormats))
+	agent.AddCommand(agentExportCmd(cfg, o.extraFormats, o.skillNameQualifier))
 
 	// Same defense as nil options: cobra's AddCommand nil-derefs on a nil
 	// child, which would panic the host at wiring time.
@@ -447,10 +480,9 @@ func commandPaths(cmd docent.Command) []string {
 	return paths
 }
 
-// exportFormat pairs a --format value with its renderer. Every format shares
-// the common Agent Skills definition (<slug>/SKILL.md, spec-conformant name
-// and description); harness-specific formats layer that harness's frontmatter
-// extensions on top.
+// exportFormat pairs a --format value with its renderer. The two built-ins
+// share the common Agent Skills definition (<name>/SKILL.md, spec-conformant
+// name and description); host-supplied formats own their artifact contract.
 type exportFormat struct {
 	name     string
 	renderer export.Renderer
@@ -468,10 +500,10 @@ type exportFormat struct {
 // joined into the spec's single description field), and export.ClaudeSkill
 // keeps them as separate keys via Claude Code's native when_to_use
 // frontmatter extension; layout, name rules, and body are identical.
-func exportFormats(extras []exportFormat) []exportFormat {
+func exportFormats(extras []exportFormat, nameQualifier string) []exportFormat {
 	formats := []exportFormat{
-		{name: "agent-skill", renderer: export.AgentSkill{}},
-		{name: "claude-skill", renderer: export.ClaudeSkill{}},
+		{name: "agent-skill", renderer: export.AgentSkill{NameQualifier: nameQualifier}},
+		{name: "claude-skill", renderer: export.ClaudeSkill{NameQualifier: nameQualifier}},
 	}
 
 	for _, e := range extras {
@@ -513,17 +545,22 @@ func formatNames(formats []exportFormat) []string {
 // The destination resolves in two modes: an explicit --dir (which requires an
 // explicit --format and behaves exactly as it always has), or --scope, which
 // detects the invoking agent harness and derives both the directory and the
-// default format from that harness's conventions. Every format writes
-// <slug>/SKILL.md per guide: "agent-skill" is the portable Agent Skills open
-// standard, "claude-skill" adds Claude Code's native when_to_use frontmatter.
-func agentExportCmd(cfg docent.Config, extraFormats []exportFormat) *gocobra.Command {
+// default format from that harness's conventions. Every built-in format writes
+// <qualified-name>/SKILL.md per guide: "agent-skill" is the portable Agent
+// Skills open standard, "claude-skill" adds Claude Code's native when_to_use
+// frontmatter.
+func agentExportCmd(
+	cfg docent.Config,
+	extraFormats []exportFormat,
+	skillNameQualifier string,
+) *gocobra.Command {
 	var (
 		format string
 		dir    string
 		scope  string
 	)
 
-	registry := exportFormats(extraFormats)
+	registry := exportFormats(extraFormats, skillNameQualifier)
 	formats := strings.Join(formatNames(registry), ", ")
 
 	cmd := &gocobra.Command{
@@ -533,11 +570,13 @@ func agentExportCmd(cfg docent.Config, extraFormats []exportFormat) *gocobra.Com
 
 One artifact file per guide is written in canonical guide order, and each
 written path is reported relative to the target directory, one per line.
-Every format writes a SKILL.md file per guide under a directory named after
-the guide's slug: "agent-skill" is the portable Agent Skills open standard
-(agentskills.io) understood by Claude Code, Codex, and other harnesses;
-"claude-skill" is the Claude Code variant carrying its native when_to_use
-frontmatter field.
+Both built-in formats write a SKILL.md file per guide under a directory named
+after the exported skill: "agent-skill" is the portable Agent Skills open
+standard (agentskills.io) understood by Claude Code, Codex, and other
+harnesses; "claude-skill" is the Claude Code variant carrying its native
+when_to_use frontmatter field. A host-configured skill-name qualifier applies
+to both built-in formats without changing the source guide slug. Host-supplied
+formats own their naming and layout policy.
 
 The target directory is either an explicit --dir (which requires --format),
 or --scope, which detects the invoking agent harness from its environment

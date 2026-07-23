@@ -2,6 +2,7 @@ package cobra_test
 
 import (
 	"bytes"
+	"errors"
 	"flag"
 	"os"
 	"path/filepath"
@@ -169,6 +170,119 @@ func TestAgentExport_claudeSkillGolden(t *testing.T) {
 	}
 
 	checkExportGolden(t, "skill_bravo_claude", readExported(t, dir, "bravo/SKILL.md"))
+}
+
+// TestAgentExport_skillNameQualifier verifies the public integration option
+// reaches both built-in renderers, qualifying the direct-child directory and
+// frontmatter name while leaving guide lookup and index output unchanged.
+func TestAgentExport_skillNameQualifier(t *testing.T) {
+	t.Parallel()
+
+	gs := mustLoadGuides(t, exportFS)
+	cfg := docent.Config{Guides: gs}
+	opts := []docentcobra.Option{
+		docentcobra.WithSkillNameQualifier("replaced"),
+		docentcobra.WithSkillNameQualifier("jira"),
+	}
+
+	for _, format := range []string{"agent-skill", "claude-skill"} {
+		t.Run(format, func(t *testing.T) {
+			t.Parallel()
+
+			dir := t.TempDir()
+			out, err := executeAgent(
+				cfg,
+				opts,
+				"agent",
+				"export",
+				"--format",
+				format,
+				"--dir",
+				dir,
+			)
+			if err != nil {
+				t.Fatalf("agent export --format %s: %v", format, err)
+			}
+
+			const rel = "jira-bravo/SKILL.md"
+			if !strings.Contains(string(out), rel+"\n") {
+				t.Errorf("report = %q, want %s", out, rel)
+			}
+
+			got := readExported(t, dir, rel)
+			if !strings.HasPrefix(got, "---\nname: jira-bravo\n") {
+				t.Errorf("qualified frontmatter name missing:\n%s", got)
+			}
+
+			if _, statErr := os.Stat(filepath.Join(dir, "jira", "jira-bravo", "SKILL.md")); !os.IsNotExist(statErr) {
+				t.Errorf("unexpected grouping directory created: %v", statErr)
+			}
+		})
+	}
+
+	qualifiedIndex, err := executeAgent(cfg, opts, "agent", "guide")
+	if err != nil {
+		t.Fatalf("qualified agent guide: %v", err)
+	}
+
+	unqualifiedIndex, err := executeAgent(docent.Config{Guides: gs}, nil, "agent", "guide")
+	if err != nil {
+		t.Fatalf("unqualified agent guide: %v", err)
+	}
+
+	if !bytes.Equal(qualifiedIndex, unqualifiedIndex) {
+		t.Errorf("WithSkillNameQualifier changed guide index:\nqualified:\n%s\nunqualified:\n%s", qualifiedIndex, unqualifiedIndex)
+	}
+
+	if g, ok := gs.Get("bravo"); !ok || g.Slug != "bravo" {
+		t.Errorf("source GuideSet changed: guide = %+v, found = %v", g, ok)
+	}
+
+	t.Run("empty option preserves unqualified bytes", func(t *testing.T) {
+		t.Parallel()
+
+		dir := t.TempDir()
+		emptyOpts := []docentcobra.Option{docentcobra.WithSkillNameQualifier("")}
+
+		out, err := executeAgent(
+			cfg,
+			emptyOpts,
+			"agent",
+			"export",
+			"--format",
+			"agent-skill",
+			"--dir",
+			dir,
+		)
+		if err != nil {
+			t.Fatalf("agent export with empty qualifier: %v", err)
+		}
+
+		if want := "bravo/SKILL.md\nalpha/SKILL.md\n"; string(out) != want {
+			t.Errorf("report = %q, want historical bytes %q", out, want)
+		}
+
+		checkExportGolden(t, "skill_bravo", readExported(t, dir, "bravo/SKILL.md"))
+	})
+}
+
+// TestAgentExport_invalidQualifiedName verifies a bad host qualifier fails
+// before the export directory is created.
+func TestAgentExport_invalidQualifiedName(t *testing.T) {
+	t.Parallel()
+
+	dir := filepath.Join(t.TempDir(), "not-created")
+	cfg := docent.Config{Guides: mustLoadGuides(t, exportFS)}
+	opts := []docentcobra.Option{docentcobra.WithSkillNameQualifier("Jira")}
+
+	_, err := executeAgent(cfg, opts, "agent", "export", "--format", "agent-skill", "--dir", dir)
+	if !errors.Is(err, export.ErrInvalidSkillName) {
+		t.Fatalf("error = %v, want errors.Is(err, ErrInvalidSkillName)", err)
+	}
+
+	if _, statErr := os.Stat(dir); !os.IsNotExist(statErr) {
+		t.Errorf("export directory exists after validation failure: %v", statErr)
+	}
 }
 
 // TestAgentExport_skillFrontmatter verifies each written artifact begins with
@@ -379,6 +493,24 @@ func TestAgentExport_withExtraFormat(t *testing.T) {
 		_, err := executeAgent(cfg, opts, "agent", "export", "--format", "stub", "--dir", t.TempDir())
 		if err == nil {
 			t.Fatal("expected unknown-format error for ignored registrations, got nil")
+		}
+	})
+
+	t.Run("host qualifier does not rewrite extra format", func(t *testing.T) {
+		t.Parallel()
+
+		dir := t.TempDir()
+		opts := []docentcobra.Option{
+			docentcobra.WithExtraFormat("stub", stubRenderer{}),
+			docentcobra.WithSkillNameQualifier("jira"),
+		}
+
+		if _, err := executeAgent(cfg, opts, "agent", "export", "--format", "stub", "--dir", dir); err != nil {
+			t.Fatalf("agent export --format stub: %v", err)
+		}
+
+		if got := readExported(t, dir, "alpha.txt"); got != "stub: alpha\n" {
+			t.Errorf("artifact = %q; qualifier should not rewrite an extra format", got)
 		}
 	})
 }

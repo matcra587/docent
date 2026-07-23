@@ -226,10 +226,16 @@ guide files.
 
 ## 6. Skills are a generated view
 
-Every export format shares one common definition — the
-[Agent Skills](https://agentskills.io) open standard: a `<slug>/SKILL.md`
-layout whose frontmatter `name` equals the slug (and therefore the directory
-name, as the spec requires). Harness-specific formats layer that harness's
+Every built-in export format shares one common definition — the
+[Agent Skills](https://agentskills.io) open standard: a `<name>/SKILL.md`
+layout whose frontmatter `name` equals the parent directory, as the spec
+requires. By default the name is the source guide slug. A host may configure
+an export-only qualifier at integration time (the reference Cobra adapter
+provides `WithSkillNameQualifier`), joined as `<qualifier>-<slug>`; the final
+name must still satisfy the Agent Skills 1-64 character,
+lowercase-alphanumeric and single-hyphen rules. Omitting the qualifier keeps
+the unqualified output. Qualification changes neither the source guide slug
+nor guide lookup/index output. Harness-specific formats layer that harness's
 extensions on top without diverging from the common shape:
 
 *   `agent export --format agent-skill` — the portable open-standard shape:

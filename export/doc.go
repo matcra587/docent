@@ -5,7 +5,9 @@
 // carries a name matching the parent directory and a description within the
 // spec's 1024-character cap. AgentSkill renders exactly that portable shape;
 // harness-specific renderers (ClaudeSkill) layer their harness's extensions
-// on top of it without ever diverging from the layout or the name rules.
+// on top of it without ever diverging from the layout or the name rules. Both
+// built-in renderers accept an optional NameQualifier that prefixes only the
+// exported name and directory; the source Guide remains unchanged.
 //
 // Beyond skill rendering, the package owns the byte shape of every guide
 // artifact the Agent Guide Standard serves: Index (the frontmatter-only

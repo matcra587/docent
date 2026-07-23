@@ -20,6 +20,15 @@
 //	cfg := docent.Config{Guides: guides, Command: docentcobra.Tree(root)}
 //	root.AddCommand(docentcobra.NewCommand(cfg))
 //
+// Hosts that share a harness skills root can qualify names emitted by the
+// two built-in skill formats at mount time. Omit the option to keep the
+// default <slug>/SKILL.md names:
+//
+//	root.AddCommand(docentcobra.NewCommand(
+//		cfg,
+//		docentcobra.WithSkillNameQualifier("jira"),
+//	))
+//
 // NewGuideCommand additionally mounts the same guide browser as a
 // first-class human command (e.g. top-level "app guide").
 //

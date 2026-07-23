@@ -14,12 +14,13 @@ import (
 //
 // Every relative path is validated — local (else ErrPathEscape) and unique
 // — before anything is written, so a path failing validation never leaves
-// partial artifacts behind. The writes themselves go through an os.Root,
-// which refuses any path component that resolves outside dir — a planted
-// symlink, a ".." segment, an absolute path — at open time instead of
-// following it; dir itself is trusted, containment applies beneath it. When
-// a write fails after some artifacts have landed (permissions, disk, an
-// os.Root refusal), the returned slice holds the paths already written,
+// partial artifacts behind. When r also implements ValidatingRenderer, its
+// guide validation runs in that same preflight. The writes themselves go
+// through an os.Root, which refuses any path component that resolves outside
+// dir — a planted symlink, a ".." segment, an absolute path — at open time
+// instead of following it; dir itself is trusted, containment applies beneath
+// it. When a write fails after some artifacts have landed (permissions, disk,
+// an os.Root refusal), the returned slice holds the paths already written,
 // alongside the error.
 func Write(dir string, r Renderer, guides []docent.Guide) ([]string, error) {
 	// Each guide's RelPath is resolved exactly once: the slash form feeds
@@ -30,6 +31,12 @@ func Write(dir string, r Renderer, guides []docent.Guide) ([]string, error) {
 	seen := make(map[string]struct{}, len(guides))
 
 	for i, g := range guides {
+		if vr, ok := r.(ValidatingRenderer); ok {
+			if err := vr.Validate(g); err != nil {
+				return nil, err
+			}
+		}
+
 		slashRels[i] = r.RelPath(g)
 
 		rels[i] = filepath.FromSlash(slashRels[i])
