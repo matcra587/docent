@@ -162,6 +162,8 @@ for c := cmd; c != nil; c = c.Parent() {
     then `bunx skills-ref validate /tmp/s/<slug>` — every artifact must
     pass. `claude-skill` answers to Claude Code's schema instead and is
     rejected by skills-ref **by design**.
+*   Validate harness-specific placement without relying on environment
+    detection: `tool agent export --scope user --harness claude-code`.
 
 ## Pitfalls
 

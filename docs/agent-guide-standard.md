@@ -114,7 +114,7 @@ Rules:
 | `<tool> agent guide <slug>`     | Print one guide; `--section <name>` prints one section.         |
 | `<tool> agent guide --all`      | Every guide concatenated in canonical order, form-feed separated. |
 | `<tool> agent schema`           | Runtime-derived contract, structure only (shape markers); `--path <cmd>` subsets one subtree with schema bodies embedded; `--shapes` embeds them tree-wide. |
-| `<tool> agent export --dir <dir> --format <fmt> \| --scope <scope> [--format <fmt>]` | Materialize guides for a harness (§6). |
+| `<tool> agent export --dir <dir> --format <fmt> \| --scope <scope> [--harness <harness>] [--format <fmt>]` | Materialize guides for a harness (§6). |
 
 The schema command emits structure by default and shapes on demand. The
 full tree carries every command, flag, group, and extension, but a
@@ -257,13 +257,13 @@ listing text at 1,536 characters, and this standard's 1,024-character
 budget is stricter, so a valid guide never exceeds either.
 
 The destination resolves in a fixed order: an explicit `--dir` wins and
-requires an explicit `--format`; otherwise `--scope project|user` detects the
-invoking harness from its environment markers and derives the directory (and
-the default format) from that harness's conventions — e.g. Claude Code reads
-`.claude/skills` / `~/.claude/skills`, Codex reads `.agents/skills` /
-`~/.agents/skills`. The format describes the artifact; the destination
-implies a default format; `--format` always overrides. An undetectable
-harness with no `--dir` is an error, never a guess.
+requires an explicit `--format`; otherwise `--scope project|user` uses the
+harness named by `--harness`, or detects the invoking harness from its
+environment markers when that flag is omitted. The harness determines the
+directory and default format — e.g. Claude Code reads `.claude/skills` /
+`~/.claude/skills`, Codex reads `.agents/skills` / `~/.agents/skills`.
+`--format` always overrides the harness default. An undetectable harness with
+neither `--harness` nor `--dir` is an error, never a guess.
 
 Exported files carry a generated-do-not-edit header, and frontmatter values
 are emitted as single-line quoted scalars so line-oriented frontmatter

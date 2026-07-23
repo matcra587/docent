@@ -15,6 +15,10 @@ var (
 	// names no registered renderer.
 	ErrUnsupportedFormat = errors.New("docent: unsupported export format")
 
+	// ErrUnsupportedHarness is the sentinel agent export wraps when
+	// --harness names no harness in harness.Supported.
+	ErrUnsupportedHarness = errors.New("docent: unsupported agent harness")
+
 	// ErrGuideNotFound is the sentinel the guide command wraps when a slug
 	// lookup finds no guide in the set. Core's GuideSet.Get signals absence
 	// with its comma-ok result and never returns this error.

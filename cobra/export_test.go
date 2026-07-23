@@ -6,6 +6,7 @@ import (
 	"flag"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -660,6 +661,210 @@ func setHarnessEnv(t *testing.T, set map[string]string) {
 	}
 }
 
+// TestAgentExport_explicitHarnessProject verifies --harness bypasses
+// environment detection and uses the selected harness's project directory
+// and default format.
+func TestAgentExport_explicitHarnessProject(t *testing.T) {
+	setHarnessEnv(t, map[string]string{"CODEX_THREAD_ID": "t-1"})
+	t.Chdir(t.TempDir())
+
+	cfg := docent.Config{Guides: mustLoadGuides(t, exportFS)}
+
+	out, err := executeAgent(
+		cfg,
+		nil,
+		"agent",
+		"export",
+		"--scope",
+		"project",
+		"--harness",
+		"claude-code",
+	)
+	if err != nil {
+		t.Fatalf("agent export with explicit harness: %v", err)
+	}
+
+	if !strings.Contains(string(out), "# selected claude-code;") {
+		t.Errorf("report does not identify explicit harness selection: %q", out)
+	}
+
+	got := readExported(t, filepath.Join(".claude", "skills"), "bravo/SKILL.md")
+	if !strings.Contains(got, "\nwhen_to_use: ") {
+		t.Errorf("claude-code default format is not claude-skill:\n%s", got)
+	}
+
+	if _, statErr := os.Stat(filepath.Join(".agents", "skills")); !os.IsNotExist(statErr) {
+		t.Errorf("environment-detected Codex directory used despite --harness: %v", statErr)
+	}
+}
+
+// TestAgentExport_explicitHarnessUser verifies user scope resolves against
+// the selected harness's home-relative directory and uses its default format.
+func TestAgentExport_explicitHarnessUser(t *testing.T) {
+	setHarnessEnv(t, map[string]string{"CLAUDECODE": "1"})
+
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+
+	cfg := docent.Config{Guides: mustLoadGuides(t, exportFS)}
+
+	_, err := executeAgent(
+		cfg,
+		nil,
+		"agent",
+		"export",
+		"--scope",
+		"user",
+		"--harness",
+		"codex",
+	)
+	if err != nil {
+		t.Fatalf("agent export with explicit harness: %v", err)
+	}
+
+	got := readExported(t, filepath.Join(home, ".agents", "skills"), "bravo/SKILL.md")
+	if strings.Contains(got, "\nwhen_to_use: ") {
+		t.Errorf("codex default format is not agent-skill:\n%s", got)
+	}
+
+	if _, statErr := os.Stat(filepath.Join(home, ".claude", "skills")); !os.IsNotExist(statErr) {
+		t.Errorf("environment-detected Claude directory used despite --harness: %v", statErr)
+	}
+}
+
+// TestAgentExport_explicitHarnessFormatOverride verifies --format still wins
+// over an explicitly selected harness's default.
+func TestAgentExport_explicitHarnessFormatOverride(t *testing.T) {
+	setHarnessEnv(t, map[string]string{})
+	t.Chdir(t.TempDir())
+
+	cfg := docent.Config{Guides: mustLoadGuides(t, exportFS)}
+
+	_, err := executeAgent(
+		cfg,
+		nil,
+		"agent",
+		"export",
+		"--scope",
+		"project",
+		"--harness",
+		"claude-code",
+		"--format",
+		"agent-skill",
+	)
+	if err != nil {
+		t.Fatalf("agent export with format override: %v", err)
+	}
+
+	got := readExported(t, filepath.Join(".claude", "skills"), "bravo/SKILL.md")
+	if strings.Contains(got, "\nwhen_to_use: ") {
+		t.Errorf("--format agent-skill did not override explicit harness default:\n%s", got)
+	}
+}
+
+// TestAgentExport_invalidHarness verifies validation and its supported-value
+// list derive from the harness registry rather than environment detection.
+func TestAgentExport_invalidHarness(t *testing.T) {
+	t.Parallel()
+
+	cfg := docent.Config{Guides: mustLoadGuides(t, exportFS)}
+
+	_, err := executeAgent(
+		cfg,
+		nil,
+		"agent",
+		"export",
+		"--scope",
+		"project",
+		"--harness",
+		"unknown",
+	)
+	if !errors.Is(err, docentcobra.ErrUnsupportedHarness) {
+		t.Fatalf("error = %v, want errors.Is(err, ErrUnsupportedHarness)", err)
+	}
+
+	for _, h := range harness.Supported() {
+		if !strings.Contains(err.Error(), h.Name) {
+			t.Errorf("error %q does not list supported harness %q", err, h.Name)
+		}
+	}
+}
+
+// TestAgentExport_harnessFlagConflicts pins that --harness belongs only to
+// scoped export and cannot be combined with the explicit-directory mode.
+func TestAgentExport_harnessFlagConflicts(t *testing.T) {
+	t.Parallel()
+
+	cfg := docent.Config{Guides: mustLoadGuides(t, exportFS)}
+
+	t.Run("requires scope", func(t *testing.T) {
+		t.Parallel()
+
+		_, err := executeAgent(cfg, nil, "agent", "export", "--harness", "codex")
+		if err == nil {
+			t.Fatal("expected --harness without --scope to fail")
+		}
+	})
+
+	t.Run("mutually exclusive with dir", func(t *testing.T) {
+		t.Parallel()
+
+		_, err := executeAgent(
+			cfg,
+			nil,
+			"agent",
+			"export",
+			"--harness",
+			"codex",
+			"--dir",
+			t.TempDir(),
+			"--format",
+			"agent-skill",
+		)
+		if err == nil {
+			t.Fatal("expected --harness with --dir to fail")
+		}
+
+		for _, want := range []string{"dir", "harness"} {
+			if !strings.Contains(err.Error(), want) {
+				t.Errorf("error = %q; want conflict diagnostic naming %q", err, want)
+			}
+		}
+	})
+}
+
+// TestAgentExport_harnessCompletion verifies every supported harness is
+// completed from the same registry used by explicit-value validation.
+func TestAgentExport_harnessCompletion(t *testing.T) {
+	t.Parallel()
+
+	agent := docentcobra.NewCommand(docent.Config{})
+	exportCmd, _, err := agent.Find([]string{"export"})
+	if err != nil {
+		t.Fatalf("find export command: %v", err)
+	}
+
+	complete, ok := exportCmd.GetFlagCompletionFunc("harness")
+	if !ok {
+		t.Fatal("--harness has no completion function")
+	}
+
+	got, directive := complete(exportCmd, nil, "")
+	want := make([]string, len(harness.Supported()))
+	for i, h := range harness.Supported() {
+		want[i] = h.Name
+	}
+
+	if !slices.Equal(got, want) {
+		t.Errorf("completion = %v, want %v", got, want)
+	}
+
+	if directive != gocobra.ShellCompDirectiveNoFileComp {
+		t.Errorf("completion directive = %v, want NoFileComp", directive)
+	}
+}
+
 // TestAgentExport_scopeProject verifies that under a detected harness,
 // "--scope project" resolves the harness's working-directory skills dir and
 // its native format without --dir or --format, and that the report names the
@@ -735,7 +940,7 @@ func TestAgentExport_scopeFormatOverride(t *testing.T) {
 
 // TestAgentExport_scopeUndetected verifies that --scope with no detectable
 // harness fails with an actionable error naming the supported harnesses and
-// the --dir fallback, and writes nothing.
+// both explicit recovery paths, and writes nothing.
 func TestAgentExport_scopeUndetected(t *testing.T) {
 	setHarnessEnv(t, map[string]string{})
 	t.Chdir(t.TempDir())
@@ -747,7 +952,7 @@ func TestAgentExport_scopeUndetected(t *testing.T) {
 		t.Fatal("expected error when no harness is detected, got nil")
 	}
 
-	for _, want := range []string{"claude-code", "codex", "--dir"} {
+	for _, want := range []string{"claude-code", "codex", "--harness", "--scope", "--dir", "--format"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error %q does not mention %q", err, want)
 		}

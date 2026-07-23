@@ -77,6 +77,13 @@ and [_examples/glamour-host](_examples/glamour-host) for a full host.
 
 ### Export configuration
 
+Scoped export can select a harness explicitly, avoiding environment
+detection while retaining that harness's directory and default format:
+
+```sh
+jira agent export --scope user --harness claude-code
+```
+
 Hosts sharing a harness skills root can qualify the two built-in skill
 formats when mounting docent, without changing guide slugs or guide lookup:
 

@@ -544,8 +544,8 @@ func formatNames(formats []exportFormat) []string {
 //
 // The destination resolves in two modes: an explicit --dir (which requires an
 // explicit --format and behaves exactly as it always has), or --scope, which
-// detects the invoking agent harness and derives both the directory and the
-// default format from that harness's conventions. Every built-in format writes
+// derives the directory and default format from either an explicit --harness
+// or the detected invoking harness. Every built-in format writes
 // <qualified-name>/SKILL.md per guide: "agent-skill" is the portable Agent
 // Skills open standard, "claude-skill" adds Claude Code's native when_to_use
 // frontmatter.
@@ -555,9 +555,10 @@ func agentExportCmd(
 	skillNameQualifier string,
 ) *gocobra.Command {
 	var (
-		format string
-		dir    string
-		scope  string
+		format      string
+		dir         string
+		scope       string
+		harnessName string
 	)
 
 	registry := exportFormats(extraFormats, skillNameQualifier)
@@ -579,26 +580,35 @@ to both built-in formats without changing the source guide slug. Host-supplied
 formats own their naming and layout policy.
 
 The target directory is either an explicit --dir (which requires --format),
-or --scope, which detects the invoking agent harness from its environment
-markers and resolves that harness's skills directory: "project" is relative
-to the working directory, "user" to the home directory. With --scope, the
-format defaults to the detected harness's native format, --format overrides,
-and the report opens with an informational line — prefixed "#" — naming the
-detected harness and resolved directory; every other report line is a
-written path.`,
+or --scope, which resolves an agent harness's skills directory: "project" is
+relative to the working directory, "user" to the home directory. Pass
+--harness to select a supported harness explicitly; without it, docent keeps
+detecting the invoking harness from environment markers. With --scope, the
+format defaults to the selected or detected harness's native format, while an
+explicit --format overrides that default. The report opens with an
+informational line prefixed "#" naming the harness and resolved directory;
+every other report line is a written path.`,
 		Example: `  # Write one open-standard SKILL.md per guide under ./skills
   app agent export --format agent-skill --dir ./skills
 
   # Let the invoking harness pick the directory and format
   app agent export --scope project
 
-  # Install into the user-level skills directory of the invoking harness
-  app agent export --scope user`,
+  # Explicitly install into Claude Code's user-level skills directory
+  app agent export --scope user --harness claude-code
+
+  # Use Codex's project directory with a non-default format
+  app agent export --scope project --harness codex --format claude-skill`,
 		Args: gocobra.NoArgs,
 		// See agentGuideCmd: runtime errors return the error line alone.
 		SilenceUsage: true,
 		RunE: func(cmd *gocobra.Command, _ []string) error {
-			resolvedFormat, resolvedDir, header, err := resolveExportDestination(format, dir, scope)
+			resolvedFormat, resolvedDir, header, err := resolveExportDestination(
+				format,
+				dir,
+				scope,
+				harnessName,
+			)
 			if err != nil {
 				return err
 			}
@@ -618,17 +628,22 @@ written path.`,
 	}
 
 	cmd.Flags().StringVar(&format, "format", "",
-		`Export format. Supported formats: `+formats+`. Required with --dir; defaults to the detected harness's format with --scope.`)
+		`Export format. Supported formats: `+formats+`. Required with --dir; defaults to the selected or detected harness's format with --scope.`)
 	cmd.Flags().StringVar(&dir, "dir", "", `Directory to write artifacts into; created if absent.`)
 	cmd.Flags().StringVar(&scope, "scope", "",
-		`Resolve the directory from the detected agent harness: "project" (working-directory skills dir) or "user" (home skills dir).`)
+		`Resolve a harness directory: "project" (working-directory skills dir) or "user" (home skills dir).`)
+	cmd.Flags().StringVar(&harnessName, "harness", "",
+		`Agent harness to use with --scope instead of environment detection. Supported harnesses: `+
+			strings.Join(supportedHarnessNames(), ", ")+`.`)
 
 	cmd.MarkFlagsOneRequired("dir", "scope")
 	cmd.MarkFlagsMutuallyExclusive("dir", "scope")
+	cmd.MarkFlagsMutuallyExclusive("dir", "harness")
 	mustRegisterCompletion(cmd, "format", func() []string { return formatNames(registry) })
 	mustRegisterCompletion(cmd, "scope", func() []string {
 		return []string{harness.ScopeProject, harness.ScopeUser}
 	})
+	mustRegisterCompletion(cmd, "harness", supportedHarnessNames)
 
 	return cmd
 }
@@ -636,16 +651,24 @@ written path.`,
 // resolveExportDestination turns the export flag surface into a concrete
 // format and target directory, plus an optional report header. Explicit --dir
 // wins and requires an explicit --format (byte-identical behavior to the
-// pre-scope command). --scope detects the invoking harness and derives the
-// directory — and, when --format is empty, the format — from its conventions;
-// the header names the detected harness and resolved directory so the report
-// states where the artifacts went.
-func resolveExportDestination(format, dir, scope string) (resolvedFormat, resolvedDir, header string, err error) {
+// pre-scope command). --scope uses an explicitly named harness when supplied,
+// otherwise it detects the invoking harness; either path derives the directory
+// and, when --format is empty, the format from that harness's conventions.
+func resolveExportDestination(
+	format,
+	dir,
+	scope,
+	harnessName string,
+) (resolvedFormat, resolvedDir, header string, err error) {
 	// Cobra's one-required check counts a flag explicitly set to "" as
 	// provided; catch that here so the error names the real problem instead
 	// of blaming a flag the caller never touched.
 	if dir == "" && scope == "" {
 		return "", "", "", errors.New("docent: one of --dir or --scope must be non-empty")
+	}
+
+	if harnessName != "" && scope == "" {
+		return "", "", "", errors.New("docent: --harness is valid only with --scope")
 	}
 
 	if dir != "" {
@@ -663,11 +686,31 @@ func resolveExportDestination(format, dir, scope string) (resolvedFormat, resolv
 		return "", "", "", err
 	}
 
-	h, ok := harness.Detect(os.LookupEnv)
-	if !ok {
-		return "", "", "", fmt.Errorf(
-			"docent: no agent harness detected (supported: %s); pass --dir to export to an explicit directory",
-			strings.Join(supportedHarnessNames(), ", "))
+	var (
+		h      harness.Harness
+		ok     bool
+		source = "selected"
+	)
+
+	if harnessName != "" {
+		h, ok = lookupHarness(harnessName)
+		if !ok {
+			return "", "", "", fmt.Errorf(
+				"%w %q; supported harnesses: %s",
+				ErrUnsupportedHarness,
+				harnessName,
+				strings.Join(supportedHarnessNames(), ", "),
+			)
+		}
+	} else {
+		source = "detected"
+		h, ok = harness.Detect(os.LookupEnv)
+		if !ok {
+			return "", "", "", fmt.Errorf(
+				"docent: no agent harness detected (supported: %s); pass --harness with --scope, or pass explicit --dir and --format",
+				strings.Join(supportedHarnessNames(), ", "),
+			)
+		}
 	}
 
 	if format == "" {
@@ -681,9 +724,21 @@ func resolveExportDestination(format, dir, scope string) (resolvedFormat, resolv
 		return "", "", "", err
 	}
 
-	header = fmt.Sprintf("# detected %s; exporting to %s\n", h.Name, resolvedDir)
+	header = fmt.Sprintf("# %s %s; exporting to %s\n", source, h.Name, resolvedDir)
 
 	return format, resolvedDir, header, nil
+}
+
+// lookupHarness resolves an explicit --harness value from the same registry
+// used by completion, help, and supported-value errors.
+func lookupHarness(name string) (harness.Harness, bool) {
+	for _, h := range harness.Supported() {
+		if h.Name == name {
+			return h, true
+		}
+	}
+
+	return harness.Harness{}, false
 }
 
 // stampContractVersion returns tree with the host contract version written
@@ -712,7 +767,8 @@ func stampContractVersion(tree docent.Command, version string) docent.Command {
 	return stamped
 }
 
-// supportedHarnessNames lists the detectable harness names for error messages.
+// supportedHarnessNames lists the harness registry names for help, completion,
+// and error messages.
 func supportedHarnessNames() []string {
 	supported := harness.Supported()
 
