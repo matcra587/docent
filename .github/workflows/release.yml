@@ -16,7 +16,7 @@ jobs:
   release:
     name: Release
     # clover: provider=github track=main repository=matcra587/github-actions tags=actions verify=true verify-branch=main
-    uses: matcra587/github-actions/.github/workflows/go-release.yml@3e61d37c312b21e008fa58eda8844a70b6a24f9d # main
+    uses: matcra587/github-actions/.github/workflows/go-release.yml@09a32f29285295a6b9f604ed98098ea409b899b4 # main
     permissions:
       contents: write # Required to create GitHub releases.
       actions: read # Required to read the gate runs for the tagged commit.
