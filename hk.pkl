@@ -1,7 +1,7 @@
-amends "package://github.com/jdx/hk/releases/download/v1.50.0/hk@1.50.0#/Config.pkl"
-import "package://github.com/jdx/hk/releases/download/v1.50.0/hk@1.50.0#/Builtins.pkl"
+amends "package://github.com/jdx/hk/releases/download/v2.6.0/hk@2.6.0#/Config.pkl"
+import "package://github.com/jdx/hk/releases/download/v2.6.0/hk@2.6.0#/Builtins.pkl"
 
-min_hk_version = "1.44.0"
+min_hk_version = "2.6.0"
 
 // Builtins as-is wherever possible. golangci-lint owns Go entirely: govet is
 // in its standard set and gofumpt runs via its formatters section, so there

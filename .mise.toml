@@ -6,7 +6,7 @@ lockfile = true
 
 [tools]
 # clover: provider=auto constraint=minor tags=go
-go = "1.26.5"
+go = "1.27.2"
 golangci-lint = "latest"
 "go:golang.org/x/vuln/cmd/govulncheck" = "latest"
 actionlint = "latest"

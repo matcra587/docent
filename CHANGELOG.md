@@ -7,6 +7,10 @@
 
 - Omit hidden flags, including flags hidden by deprecation, and groups containing them from Cobra schemas.
 
+### Dependencies
+
+- Require Go 1.27.2 and refresh example dependencies, CI workflows and hook tooling.
+
 ## [0.4.0](https://github.com/matcra587/docent/releases/tag/v0.4.0) — 2026-07-22
 
 ### Added

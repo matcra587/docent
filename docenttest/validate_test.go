@@ -161,8 +161,7 @@ func assertCheckViolations(t *testing.T, tc violationCase, errs []error) {
 	}
 
 	for _, e := range errs {
-		var ve *docent.ValidationError
-		if !errors.As(e, &ve) {
+		if _, ok := errors.AsType[*docent.ValidationError](e); !ok {
 			t.Errorf("Check: error %v is not *docent.ValidationError", e)
 		}
 	}
@@ -508,7 +507,8 @@ func TestCheck_Violations(t *testing.T) {
 					string(buildValidGuide("multi", []string{"multi run"})),
 					"description: A description for multi.",
 					"description: |-\n  A description.\n  slug: forged",
-					1))},
+					1,
+				))},
 			},
 			root:    root,
 			wantErr: docent.ErrMultilineField,
@@ -520,7 +520,8 @@ func TestCheck_Violations(t *testing.T) {
 					string(buildValidGuide("feed", []string{"feed run"})),
 					"## Decide\nContent.",
 					"## Decide\n\f",
-					1))},
+					1,
+				))},
 			},
 			root:    root,
 			wantErr: docent.ErrFormFeed,

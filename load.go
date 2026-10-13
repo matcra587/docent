@@ -303,7 +303,8 @@ func validateFields(filename string, fm frontmatter) error {
 				File: filename,
 				Message: fmt.Sprintf(
 					"description and when_to_use compose to %d characters; exported skill descriptions cap at %d",
-					composed, MaxSkillDescription),
+					composed, MaxSkillDescription,
+				),
 				Err: ErrDescriptionTooLong,
 			})
 		}
@@ -317,7 +318,8 @@ func validateFields(filename string, fm frontmatter) error {
 				File: filename,
 				Message: fmt.Sprintf(
 					"compatibility is %d characters; exported skill compatibility caps at %d",
-					n, MaxSkillCompatibility),
+					n, MaxSkillCompatibility,
+				),
 				Err: ErrCompatibilityTooLong,
 			})
 		}
@@ -378,7 +380,8 @@ func validateSlugFormat(filename, slug string) error {
 			File: filename,
 			Message: fmt.Sprintf(
 				"slug %q must be lowercase alphanumerics and hyphens with no leading, trailing, or consecutive hyphens",
-				slug),
+				slug,
+			),
 			Err: ErrInvalidSlug,
 		}
 	}

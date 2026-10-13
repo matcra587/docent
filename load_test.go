@@ -753,8 +753,7 @@ func TestLoadGuides(t *testing.T) {
 					t.Errorf("LoadGuides(%q): error %v does not wrap %v", tc.name, err, tc.wantErr)
 				}
 
-				var ve *docent.ValidationError
-				if !errors.As(err, &ve) {
+				if _, ok := errors.AsType[*docent.ValidationError](err); !ok {
 					t.Errorf("LoadGuides(%q): expected *docent.ValidationError in chain, got %T", tc.name, err)
 				}
 

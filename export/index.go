@@ -29,7 +29,8 @@ func Index(guides []docent.Guide, contractVersion string) (string, error) {
 	if contractVersion != "" &&
 		(strings.ContainsAny(contractVersion, "\n\r:") || strings.TrimSpace(contractVersion) == "") {
 		return "", fmt.Errorf(
-			"%w: %q must be a non-blank single line without colons", ErrInvalidContractVersion, contractVersion)
+			"%w: %q must be a non-blank single line without colons", ErrInvalidContractVersion, contractVersion,
+		)
 	}
 
 	var sb strings.Builder

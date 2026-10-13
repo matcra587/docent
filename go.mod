@@ -1,7 +1,7 @@
 module github.com/matcra587/docent
 
 // clover: provider=auto constraint=minor tags=go
-go 1.26.5
+go 1.27.2
 
 require (
 	github.com/spf13/cobra v1.10.2
