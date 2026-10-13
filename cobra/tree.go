@@ -151,6 +151,10 @@ func extractFlags(cmd *gocobra.Command) []docent.Flag {
 	var flags []docent.Flag
 
 	local.VisitAll(func(f *pflag.Flag) {
+		if f.Hidden {
+			return
+		}
+
 		// Persistence is decided by pointer identity, not name: a command
 		// may define the same name both local and persistent (local wins
 		// for itself, persistent applies below), and a name match would
@@ -163,6 +167,10 @@ func extractFlags(cmd *gocobra.Command) []docent.Flag {
 	// persistent flag shadowed by a same-name local is absent from it; emit
 	// the persistent variant too — it is real surface for every descendant.
 	persistent.VisitAll(func(f *pflag.Flag) {
+		if f.Hidden {
+			return
+		}
+
 		if local.Lookup(f.Name) != f {
 			flags = append(flags, convertFlag(f, true))
 		}
@@ -353,6 +361,10 @@ func extractFlagGroups(cmd *gocobra.Command) []docent.FlagGroup {
 	// call — and pass them to each collection pass.
 	local := make(map[string]struct{})
 	cmd.LocalFlags().VisitAll(func(f *pflag.Flag) {
+		if f.Hidden {
+			return
+		}
+
 		local[f.Name] = struct{}{}
 	})
 
@@ -360,6 +372,10 @@ func extractFlagGroups(cmd *gocobra.Command) []docent.FlagGroup {
 
 	visible := make(map[string]struct{})
 	merged.VisitAll(func(f *pflag.Flag) {
+		if f.Hidden {
+			return
+		}
+
 		visible[f.Name] = struct{}{}
 	})
 
@@ -391,6 +407,10 @@ func collectAnnotationGroups(merged *pflag.FlagSet, local, visible map[string]st
 	var groups []docent.FlagGroup
 
 	merged.VisitAll(func(f *pflag.Flag) {
+		if f.Hidden {
+			return
+		}
+
 		for _, groupStr := range f.Annotations[annotKey] {
 			if _, ok := seen[groupStr]; ok {
 				continue

@@ -87,6 +87,10 @@ func buildHostFaithfulTree() *gocobra.Command {
 	pf.StringP("profile", "P", "", "Config profile to use.")
 	pf.Bool("debug", false, "Enable debug output.")
 	pf.Bool("no-input", false, "Disable interactive prompts.")
+	pf.Bool("internal", false, "Internal option.")
+	if err := pf.MarkHidden("internal"); err != nil {
+		panic(err)
+	}
 
 	// ── issue ────────────────────────────────────────────────────────────────
 
@@ -166,6 +170,14 @@ func buildHostFaithfulTree() *gocobra.Command {
 	}
 	// email and token must be set together when either is provided
 	authLogin.MarkFlagsRequiredTogether("email", "token")
+
+	// Deprecated flag + group absent from schema goldens.
+	authLogin.Flags().String("legacy-server", "", "Legacy server URL.")
+	if err := authLogin.Flags().MarkDeprecated("legacy-server", "use --server instead"); err != nil {
+		panic(err)
+	}
+
+	authLogin.MarkFlagsRequiredTogether("legacy-server", "server")
 
 	// hidden subcommand — mirrors host's completion command
 	authLogout := &gocobra.Command{

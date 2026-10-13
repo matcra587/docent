@@ -230,6 +230,153 @@ func TestTree_hiddenCommand(t *testing.T) {
 	}
 }
 
+func TestTree_hiddenAndDeprecatedFlags(t *testing.T) {
+	t.Parallel()
+
+	for _, visibility := range []struct {
+		name       string
+		deprecated bool
+	}{
+		{name: "hidden"},
+		{name: "deprecated", deprecated: true},
+	} {
+		for _, scope := range []struct {
+			name       string
+			persistent bool
+			shadowed   bool
+			wantCount  int
+		}{
+			{name: "local", wantCount: 1},
+			{name: "persistent", persistent: true, wantCount: 1},
+			{name: "shadowed_local", shadowed: true, wantCount: 2},
+			{name: "shadowed_persistent", persistent: true, shadowed: true, wantCount: 2},
+		} {
+			t.Run(visibility.name+"/"+scope.name, func(t *testing.T) {
+				t.Parallel()
+
+				root := &gocobra.Command{Use: "app"}
+				root.Flags().Bool("public", false, "Public option.")
+
+				flags := root.Flags()
+				other := root.PersistentFlags()
+				if scope.persistent {
+					flags, other = other, flags
+				}
+
+				flags.Bool("internal", false, "Internal option.")
+				if scope.shadowed {
+					other.Bool("internal", false, "Visible variant.")
+				}
+
+				var err error
+				if visibility.deprecated {
+					err = flags.MarkDeprecated("internal", "use --public instead")
+				} else {
+					err = flags.MarkHidden("internal")
+				}
+
+				if err != nil {
+					t.Fatal(err)
+				}
+
+				cmd := docentcobra.Tree(root)
+				if len(cmd.Flags) != scope.wantCount {
+					t.Fatalf("Flags = %+v, want %d visible flags", cmd.Flags, scope.wantCount)
+				}
+
+				if findFlag(cmd.Flags, "public") == nil {
+					t.Error("public flag missing")
+				}
+
+				internal := findFlag(cmd.Flags, "internal")
+				if scope.shadowed {
+					if internal == nil || internal.Persistent == scope.persistent {
+						t.Errorf("internal flag = %+v, want visible variant", internal)
+					}
+				} else if internal != nil {
+					t.Errorf("internal flag emitted: %+v", internal)
+				}
+			})
+		}
+	}
+}
+
+func TestTree_flagGroupsWithHiddenAndDeprecatedMembers(t *testing.T) {
+	t.Parallel()
+
+	for _, group := range []struct {
+		kind docent.FlagGroupKind
+		mark func(*gocobra.Command, ...string)
+	}{
+		{kind: docent.FlagGroupMutuallyExclusive, mark: (*gocobra.Command).MarkFlagsMutuallyExclusive},
+		{kind: docent.FlagGroupRequiredTogether, mark: (*gocobra.Command).MarkFlagsRequiredTogether},
+		{kind: docent.FlagGroupOneRequired, mark: (*gocobra.Command).MarkFlagsOneRequired},
+	} {
+		for _, visibility := range []struct {
+			name       string
+			deprecated bool
+		}{
+			{name: "hidden"},
+			{name: "deprecated", deprecated: true},
+		} {
+			for _, scope := range []string{"local", "persistent", "inherited"} {
+				t.Run(string(group.kind)+"/"+visibility.name+"/"+scope, func(t *testing.T) {
+					t.Parallel()
+
+					root := &gocobra.Command{Use: "app"}
+					groupCmd := root
+					flags := root.Flags()
+					if scope != "local" {
+						flags = root.PersistentFlags()
+					}
+
+					if scope == "inherited" {
+						groupCmd = &gocobra.Command{Use: "child"}
+						root.AddCommand(groupCmd)
+					}
+
+					flags.Bool("internal", false, "Internal option.")
+					groupCmd.Flags().Bool("peer", false, "Peer option.")
+					groupCmd.Flags().Bool("alpha", false, "First public option.")
+					groupCmd.Flags().Bool("beta", false, "Second public option.")
+					group.mark(groupCmd, "internal", "peer")
+					group.mark(groupCmd, "alpha", "beta")
+
+					var err error
+					if visibility.deprecated {
+						err = flags.MarkDeprecated("internal", "use --peer instead")
+					} else {
+						err = flags.MarkHidden("internal")
+					}
+
+					if err != nil {
+						t.Fatal(err)
+					}
+
+					cmd := docentcobra.Tree(root)
+					if scope == "inherited" {
+						child := findChild(cmd.Children, "child")
+						if child == nil {
+							t.Fatal("child command missing")
+						}
+
+						cmd = *child
+					}
+
+					if len(cmd.FlagGroups) != 1 {
+						t.Fatalf("FlagGroups = %+v, want one visible group", cmd.FlagGroups)
+					}
+
+					got := cmd.FlagGroups[0]
+					if got.Kind != group.kind || !slices.Equal(got.Flags, []string{"alpha", "beta"}) {
+						t.Errorf("FlagGroups[0] = %+v, want %s [alpha beta]", got, group.kind)
+					}
+				})
+			}
+		}
+	}
+}
+
 // TestTree_requiredFlag verifies that MarkFlagRequired produces Required=true in the IR.
 func TestTree_requiredFlag(t *testing.T) {
 	t.Parallel()
