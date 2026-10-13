@@ -1,6 +1,12 @@
 # Release Notes
 
 
+## [0.4.1](https://github.com/matcra587/docent/releases/tag/v0.4.1) - 13/10/2026
+
+### Fixed
+
+- Omit hidden flags, including flags hidden by deprecation, and groups containing them from Cobra schemas.
+
 ## [0.4.0](https://github.com/matcra587/docent/releases/tag/v0.4.0) — 2026-07-22
 
 ### Added

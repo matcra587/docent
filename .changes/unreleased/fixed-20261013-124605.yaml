@@ -1,3 +1,0 @@
-kind: fixed
-body: Omit hidden flags, including flags hidden by deprecation, and groups containing them from Cobra schemas.
-time: 2026-10-13T12:46:05.809663-04:00
